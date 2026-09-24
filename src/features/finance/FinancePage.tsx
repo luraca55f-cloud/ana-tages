@@ -56,6 +56,19 @@ function currentMonth() {
   return isoToday().slice(0, 7);
 }
 
+function previousMonth(month: string) {
+  const parts = month.split("-");
+  const year = Number(parts[0] ?? 0);
+  const monthNumber = Number(parts[1] ?? 1);
+  const date = new Date(year, monthNumber - 2, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function percentChange(current: number, previous: number) {
+  if (previous === 0) return null;
+  return ((current - previous) / Math.abs(previous)) * 100;
+}
+
 function dateLabel(value: string | null) {
   if (!value) return "—";
   const [year, month, day] = value.slice(0, 10).split("-");
@@ -72,28 +85,102 @@ function emptyBundle(): FinanceBundle {
 
 export function FinanceDashboardMetrics() {
   const [data, setData] = useState<FinanceBundle>(emptyBundle);
+  const [previousData, setPreviousData] = useState<FinanceBundle>(emptyBundle);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    generatePackageBillingsForMonth(currentMonth()).then(() => loadFinanceBundle(currentMonth())).then(setData).catch((error) => console.error(error));
+    const month = currentMonth();
+    Promise.all([
+      generatePackageBillingsForMonth(month).then(() => loadFinanceBundle(month)),
+      loadFinanceBundle(previousMonth(month)),
+    ]).then(([current, previous]) => {
+      setData(current);
+      setPreviousData(previous);
+    }).catch((error) => console.error(error));
   }, []);
 
-  const billed = data.billed.reduce((sum, item) => sum + Number(item.amount), 0);
   const received = data.receivedInPeriod.reduce((sum, item) => sum + Number(item.received_amount || 0), 0);
   const receivable = data.receivables.reduce((sum, item) => sum + outstanding(item), 0);
   const expenses = data.expenses.reduce((sum, item) => sum + Number(item.amount), 0);
+  const result = received - expenses;
+
+  const previousReceived = previousData.receivedInPeriod.reduce((sum, item) => sum + Number(item.received_amount || 0), 0);
+  const previousExpenses = previousData.expenses.reduce((sum, item) => sum + Number(item.amount), 0);
+  const previousResult = previousReceived - previousExpenses;
 
   return (
     <section aria-label="Indicadores financeiros" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="Faturado no mês" value={money(billed)} note="atendimentos + outros serviços" icon={<CircleDollarSign />} />
-      <Metric label="Recebido no mês" value={money(received)} note="entradas efetivamente recebidas" icon={<TrendingUp />} />
-      <Metric label="Carteira a receber" value={money(receivable)} note={`${data.receivables.length} cobrança(s) em aberto`} icon={<Clock3 />} />
-      <Metric label="Despesas no mês" value={money(expenses)} note={`resultado de caixa: ${money(received - expenses)}`} icon={<TrendingDown />} />
+      <DashboardMetric
+        label="Recebido no mês"
+        value={money(received)}
+        note="entradas efetivamente recebidas"
+        icon={<CircleDollarSign />}
+        change={percentChange(received, previousReceived)}
+        positiveWhenUp
+      />
+      <DashboardMetric
+        label="A receber"
+        value={money(receivable)}
+        note={`${data.receivables.length} cobrança(s) pendente(s)`}
+        icon={<Clock3 />}
+      />
+      <DashboardMetric
+        label="Despesas do mês"
+        value={money(expenses)}
+        note="gastos fixos e variáveis"
+        icon={<TrendingDown />}
+        change={percentChange(expenses, previousExpenses)}
+        positiveWhenUp={false}
+      />
+      <DashboardMetric
+        label="Resultado do mês"
+        value={money(result)}
+        note="receitas menos despesas"
+        icon={<TrendingUp />}
+        change={percentChange(result, previousResult)}
+        positiveWhenUp
+        valueTone={result < 0 ? "negative" : result > 0 ? "positive" : "neutral"}
+      />
     </section>
   );
 }
 
-export function FinancePage() {
+function DashboardMetric({
+  label,
+  value,
+  note,
+  icon,
+  change,
+  positiveWhenUp = true,
+  valueTone = "neutral",
+}: {
+  label: string;
+  value: string;
+  note: string;
+  icon: ReactNode;
+  change?: number | null;
+  positiveWhenUp?: boolean;
+  valueTone?: "neutral" | "positive" | "negative";
+}) {
+  const hasChange = typeof change === "number" && Number.isFinite(change);
+  const up = hasChange ? change >= 0 : false;
+  const positive = hasChange ? (up ? positiveWhenUp : !positiveWhenUp) : false;
+  const valueClass = valueTone === "negative" ? "text-destructive" : valueTone === "positive" ? "text-primary" : "text-foreground";
+  return <article className="dashboard-card rounded-2xl p-5">
+    <div className="flex items-start justify-between gap-3">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <span className="grid size-10 place-items-center rounded-full bg-accent text-primary [&_svg]:size-4">{icon}</span>
+    </div>
+    <p className={`mt-3 font-display text-[30px] leading-[1.1] tabular-nums ${valueClass}`}>{value}</p>
+    <p className="mt-2 text-[10px] text-muted-foreground">{note}</p>
+    {hasChange && <div className={`mt-3 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${positive ? "bg-primary/8 text-primary" : "bg-destructive/8 text-destructive"}`}>
+      <span>{up ? "↗" : "↘"}</span>
+      <span>{up ? "+" : ""}{change.toFixed(0).replace(".", ",")}% em relação ao mês anterior</span>
+    </div>}
+  </article>;
+}
+
+export function FinancePage({ initialModal = null, onInitialModalHandled }: { initialModal?: "revenue" | "expense" | null; onInitialModalHandled?: () => void } = {}) {
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState<FinanceBundle>(emptyBundle);
   const [loading, setLoading] = useState(false);
@@ -102,6 +189,13 @@ export function FinancePage() {
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
   const [editingPatient, setEditingPatient] = useState<PatientBilling | null>(null);
   const [tab, setTab] = useState<"overview" | "receivables" | "expenses" | "billing">("overview");
+
+  useEffect(() => {
+    if (!initialModal) return;
+    setEditingExpense(null);
+    setModal(initialModal);
+    onInitialModalHandled?.();
+  }, [initialModal, onInitialModalHandled]);
 
   const reload = async () => {
     if (!isSupabaseConfigured) return;

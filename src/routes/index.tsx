@@ -93,6 +93,7 @@ function SecureConsultorioApp() {
 }
 
 type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Relatórios" | "Materiais" | "Configurações";
+type QuickAction = "session" | "expense" | "revenue" | "patient";
 
 type PatientView = PatientRow & {
   initials: string;
@@ -221,6 +222,7 @@ function ConsultorioApp() {
   const [settings, setSettings] = useState<AppSettingsRow | null>(null);
   const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null);
   const [loadingCore, setLoadingCore] = useState(false);
+  const [pendingQuickAction, setPendingQuickAction] = useState<QuickAction | null>(null);
 
   const refreshCore = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -254,6 +256,15 @@ function ConsultorioApp() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const runQuickAction = (action: QuickAction) => {
+    if (action === "patient") {
+      setPatientModal("new");
+      return;
+    }
+    setPendingQuickAction(action);
+    openModule(action === "session" ? "Sessões" : "Financeiro");
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground lg:flex">
       <aside className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-64 flex-col border-r border-border bg-card/95 p-5 backdrop-blur-xl lg:sticky lg:top-0 lg:flex lg:h-screen lg:bg-card/60`}>
@@ -282,11 +293,11 @@ function ConsultorioApp() {
         </header>
 
         <main className="mx-auto max-w-[1460px] p-4 sm:p-7">
-          {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} openModule={openModule} openRecord={setRecordPatient} />}
+          {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} openModule={openModule} openRecord={setRecordPatient} onQuickAction={runQuickAction} />}
           {activeModule === "Agenda" && <AgendaPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
           {activeModule === "Pacientes" && <PatientsPage patients={patientViews} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
-          {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
-          {activeModule === "Financeiro" && <FinancePageV2 />}
+          {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} initialCreate={pendingQuickAction === "session"} onInitialCreateHandled={() => setPendingQuickAction(null)} />}
+          {activeModule === "Financeiro" && <FinancePageV2 initialModal={pendingQuickAction === "expense" ? "expense" : pendingQuickAction === "revenue" ? "revenue" : null} onInitialModalHandled={() => setPendingQuickAction(null)} />}
           {activeModule === "Relatórios" && <ReportsPage />}
           {activeModule === "Materiais" && <MaterialsPage />}
           {activeModule === "Configurações" && <SettingsPage settings={settings} vaultKey={vaultKey} onVaultKey={setVaultKey} onSettings={(value) => setSettings(value)} />}
@@ -304,7 +315,7 @@ function PageHeader({ title, description, action }: { title: string; description
   return <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl leading-tight">{title}</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">{description}</p></div>{action}</section>;
 }
 
-function DashboardPage({ patients, appointments, openModule, openRecord }: { patients: PatientView[]; appointments: AppointmentRow[]; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void }) {
+function DashboardPage({ patients, appointments, openModule, openRecord, onQuickAction }: { patients: PatientView[]; appointments: AppointmentRow[]; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void; onQuickAction: (action: QuickAction) => void }) {
   const today = isoDateLocal();
   const todayAppointments = appointments.filter((item) => item.scheduled_at.slice(0, 10) === today && item.status !== "cancelled").sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at));
   const month = today.slice(0, 7);
@@ -312,10 +323,19 @@ function DashboardPage({ patients, appointments, openModule, openRecord }: { pat
   return <>
     <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl">Olá, Anna!</h1><p className="mt-2 text-sm text-muted-foreground">Resumo real do consultório para hoje.</p></div><p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeZone: "America/Sao_Paulo" }).format(new Date())}</p></section>
     <FinanceDashboardMetrics />
+    <section className="dashboard-card mt-4 rounded-2xl p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-display text-lg">Ações rápidas</h2><p className="mt-1 text-[10px] text-muted-foreground">Acesse os lançamentos mais usados sem procurar no menu.</p></div></div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <button onClick={() => onQuickAction("session")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><Video className="size-4" /></span><div><p className="text-xs font-semibold">Nova sessão</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar atendimento</p></div></button>
+        <button onClick={() => onQuickAction("expense")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingDown className="size-4" /></span><div><p className="text-xs font-semibold">Nova despesa</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar gasto</p></div></button>
+        <button onClick={() => onQuickAction("revenue")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingUp className="size-4" /></span><div><p className="text-xs font-semibold">Novo faturamento</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar receita</p></div></button>
+        <button onClick={() => onQuickAction("patient")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><UserPlus className="size-4" /></span><div><p className="text-xs font-semibold">Novo paciente</p><p className="mt-0.5 text-[10px] text-muted-foreground">Cadastrar paciente</p></div></button>
+      </div>
+    </section>
     <div className="mt-4 grid grid-cols-12 gap-4">
       <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-7"><div className="flex items-center justify-between"><h2 className="font-display text-lg">Agenda de hoje</h2><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div><div className="mt-4 space-y-2">{todayAppointments.length === 0 && <Empty text="Nenhum atendimento agendado para hoje." />}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl bg-background/55 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div></section>
       <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-5"><div className="flex items-center justify-between"><h2 className="font-display text-lg">Pacientes</h2><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Pacientes")}>Ver todos</Button></div><div className="mt-3 space-y-1.5">{patients.slice(0, 5).map((patient) => <button key={patient.id} onClick={() => openRecord(patient)} className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left hover:bg-accent/50"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{patient.initials}</span><div className="min-w-0"><p className="truncate text-[13px] font-medium">{patient.full_name}</p><p className="text-[10px] text-muted-foreground">Próxima: {patient.nextSession}</p></div></button>)}</div></section>
-      <section className="dashboard-card col-span-12 rounded-2xl p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos no mês</h2><p className="mt-1 text-[11px] text-muted-foreground">Dados cadastrados na agenda, sem números fictícios.</p></div><div className="flex gap-4 text-[11px] text-muted-foreground"><span>Presenciais: <strong className="text-foreground">{monthly.filter((x) => x.modality === "presential").length}</strong></span><span>On-line: <strong className="text-foreground">{monthly.filter((x) => x.modality === "online").length}</strong></span><span>Concluídos: <strong className="text-foreground">{monthly.filter((x) => x.status === "completed").length}</strong></span></div></div><WeeklyAppointmentsChart appointments={monthly} /></section>
+      <section className="dashboard-card col-span-12 rounded-2xl p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos no mês</h2><p className="mt-1 text-[11px] text-muted-foreground">Acompanhamento dos atendimentos registrados.</p></div><div className="flex gap-4 text-[11px] text-muted-foreground"><span>Presenciais: <strong className="text-foreground">{monthly.filter((x) => x.modality === "presential").length}</strong></span><span>On-line: <strong className="text-foreground">{monthly.filter((x) => x.modality === "online").length}</strong></span><span>Concluídos: <strong className="text-foreground">{monthly.filter((x) => x.status === "completed").length}</strong></span></div></div><WeeklyAppointmentsChart appointments={monthly} /></section>
     </div>
   </>;
 }
@@ -393,18 +413,61 @@ function PatientsPage({ patients, onNew, onEdit, onRecord, onChanged }: { patien
   </>;
 }
 
-function SessionsPage({ patients, services, onChanged }: { patients: PatientRow[]; services: ServiceCatalogItem[]; onChanged: () => Promise<void> }) {
+function SessionsPage({ patients, services, onChanged, initialCreate = false, onInitialCreateHandled }: { patients: PatientRow[]; services: ServiceCatalogItem[]; onChanged: () => Promise<void>; initialCreate?: boolean; onInitialCreateHandled?: () => void }) {
   const [month, setMonth] = useState(isoDateLocal().slice(0, 7));
-  const [items, setItems] = useState<AppointmentRow[]>([]);
+  const [view, setView] = useState<"month" | "all">("month");
+  const [allItems, setAllItems] = useState<AppointmentRow[]>([]);
   const [editing, setEditing] = useState<AppointmentRow | "new" | null>(null);
-  const reload = useCallback(async () => { if (!isSupabaseConfigured) return; const b = monthBounds(month); setItems(await listAppointments(new Date(`${b.start}T00:00:00`).toISOString(), new Date(`${b.end}T00:00:00`).toISOString())); }, [month]);
+  const [loading, setLoading] = useState(false);
+
+  const reload = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    setLoading(true);
+    try { setAllItems(await listAllAppointments()); }
+    finally { setLoading(false); }
+  }, []);
+
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    if (!initialCreate) return;
+    setEditing("new");
+    onInitialCreateHandled?.();
+  }, [initialCreate, onInitialCreateHandled]);
+
+  const items = useMemo(() => view === "all" ? allItems : allItems.filter((x) => x.scheduled_at.slice(0, 7) === month), [allItems, month, view]);
   const completed = items.filter((x) => x.status === "completed");
-  const sessionItems = items.filter((x) => x.service_kind === "session");
+  const evaluations = items.filter((x) => x.service_kind === "psychological_test" || x.service_kind === "neuropsychology");
+  const now = Date.now();
+  const future = allItems
+    .filter((x) => new Date(x.scheduled_at).getTime() > now && ["scheduled", "confirmed"].includes(x.status))
+    .sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at));
+
   return <>
-    <PageHeader title="Sessões" description="Registre e acompanhe atendimentos, modalidade, duração, status e valor." action={<div className="flex gap-2"><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-xs" /><Button variant="dashboard" onClick={() => setEditing("new")}><Plus /> Registrar sessão</Button></div>} />
-    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Sessões no mês" value={String(sessionItems.length)} note={`${completed.filter((x) => x.service_kind === "session").length} concluída(s)`} icon={<CalendarDays />} /><MetricCard label="Presenciais" value={String(items.filter((x) => x.modality === "presential").length)} note="atendimentos registrados" icon={<Users />} /><MetricCard label="On-line" value={String(items.filter((x) => x.modality === "online").length)} note="atendimentos registrados" icon={<Video />} /><MetricCard label="Pendentes" value={String(items.filter((x) => ["scheduled", "confirmed"].includes(x.status)).length)} note="a realizar" icon={<Clock3 />} /></section>
-    <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ação</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4 text-right"><Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></td></tr>)}</tbody></table>{items.length === 0 && <Empty text="Nenhum atendimento registrado no mês." />}</div></section>
+    <PageHeader title="Sessões" description="Acompanhe sessões, testes, avaliações e demais atendimentos registrados." action={<Button variant="dashboard" onClick={() => setEditing("new")}><Plus /> Registrar atendimento</Button>} />
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setView("month"); }} className="h-10 rounded-xl border border-border bg-card px-3 text-xs" />
+      <Button variant={view === "month" ? "dashboard" : "quiet"} onClick={() => setView("month")}>Mês selecionado</Button>
+      <Button variant={view === "all" ? "dashboard" : "quiet"} onClick={() => setView("all")}>Todo período</Button>
+    </div>
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <MetricCard label="Registros no período" value={String(items.length)} note={view === "month" ? "sessões e serviços no mês" : "todos os registros"} icon={<CalendarDays />} />
+      <MetricCard label="Testes e avaliações" value={String(evaluations.length)} note="psicológicos e neuropsicológicos" icon={<ClipboardList />} />
+      <MetricCard label="Atendimentos futuros" value={String(future.length)} note="agendados ou confirmados" icon={<Clock3 />} />
+      <MetricCard label="Concluídos" value={String(completed.length)} note="atendimentos finalizados" icon={<BadgeCheck />} />
+    </section>
+
+    <section className="dashboard-card mt-4 rounded-2xl p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Próximos atendimentos</h2><p className="mt-1 text-[11px] text-muted-foreground">Visão das próximas sessões, testes e demais serviços.</p></div><strong className="text-sm">{future.length} futuro(s)</strong></div>
+      <div className="mt-4 grid gap-2 lg:grid-cols-2">
+        {future.slice(0, 6).map((item) => <button key={item.id} onClick={() => setEditing(item)} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left hover:bg-accent/50"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-primary"><CalendarDays className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{item.patient_name || appointmentServiceLabel(item)}</p><p className="mt-1 text-[10px] text-muted-foreground">{dateTimeLabel(item.scheduled_at)} • {appointmentServiceLabel(item)}</p></div><ChevronRight className="size-4 text-muted-foreground" /></button>)}
+        {future.length === 0 && <div className="lg:col-span-2"><Empty text="Nenhum atendimento futuro agendado." /></div>}
+      </div>
+    </section>
+
+    <section className="dashboard-card mt-4 rounded-2xl p-5">
+      <div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos e serviços</h2><p className="mt-1 text-[11px] text-muted-foreground">Sessões, testes psicológicos, neuropsicologia, empresas e outros serviços.</p></div><span className="text-[10px] text-muted-foreground">{loading ? "Carregando..." : `${items.length} registro(s)`}</span></div>
+      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ação</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4 text-right"><Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></td></tr>)}</tbody></table>{items.length === 0 && !loading && <Empty text="Nenhum atendimento encontrado neste período." />}</div>
+    </section>
     {editing && <AppointmentModal patients={patients} services={services} appointment={editing === "new" ? null : editing} defaultDate={`${month}-01`} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
   </>;
 }
