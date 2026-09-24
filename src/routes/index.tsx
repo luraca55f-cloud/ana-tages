@@ -50,6 +50,7 @@ import {
   deletePatient,
   getAppSettings,
   grantClinicalAccess,
+  listAllAppointments,
   listAppointments,
   listClinicalNotes,
   listMaterials,
@@ -71,6 +72,7 @@ import type {
   MaterialRow,
   PatientRow,
   ReportsBundle,
+  ServiceCatalogItem,
   ServiceKind,
 } from "../features/clinic/types";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
@@ -177,6 +179,23 @@ function serviceLabel(kind: ServiceKind) {
   return ({ session: "Sessão", psychological_test: "Teste psicológico", neuropsychology: "Neuropsicologia", company: "Empresa", other: "Outro" } as const)[kind];
 }
 
+const DEFAULT_SERVICE_CATALOG: ServiceCatalogItem[] = [
+  { id: "session", name: "Sessão", kind: "session", active: true },
+  { id: "psychological-test", name: "Teste psicológico", kind: "psychological_test", active: true },
+  { id: "neuropsychology", name: "Neuropsicologia", kind: "neuropsychology", active: true },
+  { id: "company", name: "Empresa", kind: "company", active: true },
+  { id: "other", name: "Outro", kind: "other", active: true },
+];
+
+function appointmentServiceLabel(item: AppointmentRow) {
+  return item.service_name?.trim() || serviceLabel(item.service_kind);
+}
+
+function availableServices(settings: AppSettingsRow | null) {
+  const catalog = settings?.service_catalog;
+  return Array.isArray(catalog) && catalog.length ? catalog : DEFAULT_SERVICE_CATALOG;
+}
+
 function toPatientView(patient: PatientRow, appointments: AppointmentRow[]): PatientView {
   const related = appointments.filter((item) => item.patient_id === patient.id && item.status !== "cancelled");
   const now = Date.now();
@@ -254,7 +273,7 @@ function ConsultorioApp() {
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 flex h-16 items-center border-b border-border bg-background/90 px-4 backdrop-blur-xl sm:px-7">
           <Button variant="ghost" size="icon" className="mr-2 lg:hidden" onClick={() => setMenuOpen(true)}><Menu /></Button>
-          <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : "Dados sincronizados com o Supabase"}</div>
+          <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
             <Button variant="quiet" size="icon" className="rounded-full" onClick={() => void signOut()}><LogOut /></Button>
@@ -264,9 +283,9 @@ function ConsultorioApp() {
 
         <main className="mx-auto max-w-[1460px] p-4 sm:p-7">
           {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} openModule={openModule} openRecord={setRecordPatient} />}
-          {activeModule === "Agenda" && <AgendaPage patients={patients} onChanged={refreshCore} />}
+          {activeModule === "Agenda" && <AgendaPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
           {activeModule === "Pacientes" && <PatientsPage patients={patientViews} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
-          {activeModule === "Sessões" && <SessionsPage patients={patients} onChanged={refreshCore} />}
+          {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
           {activeModule === "Financeiro" && <FinancePageV2 />}
           {activeModule === "Relatórios" && <ReportsPage />}
           {activeModule === "Materiais" && <MaterialsPage />}
@@ -294,28 +313,73 @@ function DashboardPage({ patients, appointments, openModule, openRecord }: { pat
     <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl">Olá, Anna!</h1><p className="mt-2 text-sm text-muted-foreground">Resumo real do consultório para hoje.</p></div><p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeZone: "America/Sao_Paulo" }).format(new Date())}</p></section>
     <FinanceDashboardMetrics />
     <div className="mt-4 grid grid-cols-12 gap-4">
-      <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-7"><div className="flex items-center justify-between"><h2 className="font-display text-lg">Agenda de hoje</h2><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div><div className="mt-4 space-y-2">{todayAppointments.length === 0 && <Empty text="Nenhum atendimento agendado para hoje." />}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl bg-background/55 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || serviceLabel(item.service_kind)}</p><p className="text-[10px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div></section>
+      <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-7"><div className="flex items-center justify-between"><h2 className="font-display text-lg">Agenda de hoje</h2><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div><div className="mt-4 space-y-2">{todayAppointments.length === 0 && <Empty text="Nenhum atendimento agendado para hoje." />}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl bg-background/55 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div></section>
       <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-5"><div className="flex items-center justify-between"><h2 className="font-display text-lg">Pacientes</h2><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Pacientes")}>Ver todos</Button></div><div className="mt-3 space-y-1.5">{patients.slice(0, 5).map((patient) => <button key={patient.id} onClick={() => openRecord(patient)} className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left hover:bg-accent/50"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{patient.initials}</span><div className="min-w-0"><p className="truncate text-[13px] font-medium">{patient.full_name}</p><p className="text-[10px] text-muted-foreground">Próxima: {patient.nextSession}</p></div></button>)}</div></section>
       <section className="dashboard-card col-span-12 rounded-2xl p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos no mês</h2><p className="mt-1 text-[11px] text-muted-foreground">Dados cadastrados na agenda, sem números fictícios.</p></div><div className="flex gap-4 text-[11px] text-muted-foreground"><span>Presenciais: <strong className="text-foreground">{monthly.filter((x) => x.modality === "presential").length}</strong></span><span>On-line: <strong className="text-foreground">{monthly.filter((x) => x.modality === "online").length}</strong></span><span>Concluídos: <strong className="text-foreground">{monthly.filter((x) => x.status === "completed").length}</strong></span></div></div><WeeklyAppointmentsChart appointments={monthly} /></section>
     </div>
   </>;
 }
 
-function AgendaPage({ patients, onChanged }: { patients: PatientRow[]; onChanged: () => Promise<void> }) {
+function AgendaPage({ patients, services, onChanged }: { patients: PatientRow[]; services: ServiceCatalogItem[]; onChanged: () => Promise<void> }) {
+  type AgendaRange = "day" | "current_month" | "previous_month" | "all";
   const [day, setDay] = useState(isoDateLocal());
+  const [range, setRange] = useState<AgendaRange>("day");
   const [items, setItems] = useState<AppointmentRow[]>([]);
   const [editing, setEditing] = useState<AppointmentRow | "new" | null>(null);
   const [loading, setLoading] = useState(false);
-  const reload = useCallback(async () => { if (!isSupabaseConfigured) return; setLoading(true); try { const bounds = dayBounds(day); setItems(await listAppointments(bounds.start, bounds.end)); } finally { setLoading(false); } }, [day]);
+
+  const reload = useCallback(async () => {
+    if (!isSupabaseConfigured) return;
+    setLoading(true);
+    try {
+      if (range === "all") {
+        setItems(await listAllAppointments());
+        return;
+      }
+      if (range === "day") {
+        const bounds = dayBounds(day);
+        setItems(await listAppointments(bounds.start, bounds.end));
+        return;
+      }
+      const current = parseMonth(isoDateLocal().slice(0, 7));
+      const target = range === "current_month"
+        ? `${current.year}-${String(current.monthNumber).padStart(2, "0")}`
+        : (() => {
+            const previous = new Date(current.year, current.monthNumber - 2, 1);
+            return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}`;
+          })();
+      const bounds = monthBounds(target);
+      setItems(await listAppointments(new Date(`${bounds.start}T00:00:00`).toISOString(), new Date(`${bounds.end}T00:00:00`).toISOString()));
+    } finally {
+      setLoading(false);
+    }
+  }, [day, range]);
+
   useEffect(() => { void reload(); }, [reload]);
+
   const completed = items.filter((x) => x.status === "completed").length;
+  const rangeLabel = range === "day" ? "dia" : range === "current_month" ? "este mês" : range === "previous_month" ? "mês anterior" : "todo o período";
+  const defaultDate = range === "day" ? day : isoDateLocal();
+
   return <>
     <PageHeader title="Agenda" description="Cadastre, edite e acompanhe os atendimentos do consultório." action={<Button variant="dashboard" onClick={() => setEditing("new")}><Plus /> Novo agendamento</Button>} />
-    <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
-      <section className="dashboard-card rounded-2xl p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] text-muted-foreground">Data selecionada</p><input type="date" value={day} onChange={(e) => setDay(e.target.value)} className="mt-1 h-10 rounded-xl border border-border bg-background px-3 text-sm" /></div><span className="text-xs text-muted-foreground">{loading ? "Carregando..." : `${items.length} registro(s)`}</span></div><div className="mt-5 space-y-3">{items.length === 0 && !loading && <Empty text="Nenhum atendimento nesta data." />}{items.map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-card/55 p-4 sm:flex-row sm:items-center"><div className="w-16 text-sm font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</div><div className="min-w-0 flex-1"><p className="text-sm font-medium">{item.patient_name || serviceLabel(item.service_kind)}</p><p className="mt-1 text-[11px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min • {serviceLabel(item.service_kind)} • {money(item.amount)}</p></div><StatusBadge status={statusLabel(item.status)} /><Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></article>)}</div></section>
-      <section className="dashboard-card rounded-2xl p-5"><h2 className="font-display text-lg">Resumo do dia</h2><div className="mt-4 space-y-3 text-xs"><SummaryRow label="Atendimentos" value={String(items.length)} /><SummaryRow label="Presenciais" value={String(items.filter((x) => x.modality === "presential").length)} /><SummaryRow label="On-line" value={String(items.filter((x) => x.modality === "online").length)} /><SummaryRow label="Concluídos" value={String(completed)} /></div><p className="mt-5 text-[10px] leading-4 text-muted-foreground">O agendamento é interno. Não há página pública de autoagendamento nesta versão.</p></section>
+    <div className="mb-4 flex flex-wrap items-end gap-2">
+      <div><p className="mb-1 text-[10px] text-muted-foreground">Data específica</p><input type="date" value={day} onChange={(e) => { setDay(e.target.value); setRange("day"); }} className="h-10 rounded-xl border border-border bg-card px-3 text-sm" /></div>
+      <Button variant={range === "current_month" ? "dashboard" : "quiet"} onClick={() => setRange("current_month")}>Este mês</Button>
+      <Button variant={range === "previous_month" ? "dashboard" : "quiet"} onClick={() => setRange("previous_month")}>Mês anterior</Button>
+      <Button variant={range === "all" ? "dashboard" : "quiet"} onClick={() => setRange("all")}>Todo período</Button>
     </div>
-    {editing && <AppointmentModal patients={patients} appointment={editing === "new" ? null : editing} defaultDate={day} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
+    <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
+      <section className="dashboard-card rounded-2xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] text-muted-foreground">Visualizando</p><p className="mt-1 text-sm font-medium capitalize">{rangeLabel}</p></div><span className="text-xs text-muted-foreground">{loading ? "Carregando..." : `${items.length} registro(s)`}</span></div>
+        <div className="mt-5 space-y-3">
+          {items.length === 0 && !loading && <Empty text={range === "day" ? "Nenhum atendimento nesta data." : "Nenhum atendimento neste período."} />}
+          {items.map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-card/55 p-4 sm:flex-row sm:items-center"><div className={`${range === "day" ? "w-16" : "w-28"} text-xs font-semibold`}>{range === "day" ? new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : dateTimeLabel(item.scheduled_at)}</div><div className="min-w-0 flex-1"><p className="text-sm font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="mt-1 text-[11px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min • {appointmentServiceLabel(item)} • {money(item.amount)}</p></div><StatusBadge status={statusLabel(item.status)} /><Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></article>)}
+        </div>
+      </section>
+      <section className="dashboard-card rounded-2xl p-5"><h2 className="font-display text-lg">Resumo do período</h2><p className="mt-1 text-[10px] text-muted-foreground capitalize">{rangeLabel}</p><div className="mt-4 space-y-3 text-xs"><SummaryRow label="Atendimentos" value={String(items.length)} /><SummaryRow label="Presenciais" value={String(items.filter((x) => x.modality === "presential").length)} /><SummaryRow label="On-line" value={String(items.filter((x) => x.modality === "online").length)} /><SummaryRow label="Concluídos" value={String(completed)} /></div><p className="mt-5 text-[10px] leading-4 text-muted-foreground">O agendamento é interno e gerenciado pela própria profissional.</p></section>
+    </div>
+    {editing && <AppointmentModal patients={patients} services={services} appointment={editing === "new" ? null : editing} defaultDate={defaultDate} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
   </>;
 }
 
@@ -325,11 +389,11 @@ function PatientsPage({ patients, onNew, onEdit, onRecord, onChanged }: { patien
   return <>
     <PageHeader title="Pacientes" description="Cadastro administrativo, regras de cobrança e acesso seguro ao prontuário clínico." action={<Button variant="dashboard" onClick={onNew}><UserPlus /> Novo paciente</Button>} />
     <section className="dashboard-card rounded-2xl p-4 sm:p-5"><div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar paciente..." /></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[780px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Paciente</th><th className="px-3 py-3">Última sessão</th><th className="px-3 py-3">Próxima sessão</th><th className="px-3 py-3">Cobrança</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{visible.map((p) => <tr key={p.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{p.initials}</span><div><p className="text-[13px] font-medium">{p.full_name}</p><p className="text-[10px] text-muted-foreground">{p.phone || "Sem telefone"}</p></div></div></td><td className="px-3 py-4 text-xs text-muted-foreground">{p.lastSession}</td><td className="px-3 py-4 text-xs">{p.nextSession}</td><td className="px-3 py-4 text-xs">{p.billing_model === "package" ? `Pacote ${p.package_amount ? money(p.package_amount) : ""}` : "Por sessão"}</td><td className="px-3 py-4"><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></td><td className="px-3 py-4"><div className="flex justify-end gap-1"><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="ghost" size="icon" onClick={() => onEdit(p)}><Pencil /></Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /></Button></div></td></tr>)}</tbody></table>{visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}</div></section>
-    <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Cada abertura exige código TOTP. O conteúdo das evoluções é criptografado no navegador antes de ser enviado ao Supabase.</p></div></div></section>
+    <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Cada abertura exige código TOTP. O conteúdo das evoluções é criptografado no navegador antes de ser armazenado.</p></div></div></section>
   </>;
 }
 
-function SessionsPage({ patients, onChanged }: { patients: PatientRow[]; onChanged: () => Promise<void> }) {
+function SessionsPage({ patients, services, onChanged }: { patients: PatientRow[]; services: ServiceCatalogItem[]; onChanged: () => Promise<void> }) {
   const [month, setMonth] = useState(isoDateLocal().slice(0, 7));
   const [items, setItems] = useState<AppointmentRow[]>([]);
   const [editing, setEditing] = useState<AppointmentRow | "new" | null>(null);
@@ -340,8 +404,8 @@ function SessionsPage({ patients, onChanged }: { patients: PatientRow[]; onChang
   return <>
     <PageHeader title="Sessões" description="Registre e acompanhe atendimentos, modalidade, duração, status e valor." action={<div className="flex gap-2"><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-xs" /><Button variant="dashboard" onClick={() => setEditing("new")}><Plus /> Registrar sessão</Button></div>} />
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Sessões no mês" value={String(sessionItems.length)} note={`${completed.filter((x) => x.service_kind === "session").length} concluída(s)`} icon={<CalendarDays />} /><MetricCard label="Presenciais" value={String(items.filter((x) => x.modality === "presential").length)} note="atendimentos registrados" icon={<Users />} /><MetricCard label="On-line" value={String(items.filter((x) => x.modality === "online").length)} note="atendimentos registrados" icon={<Video />} /><MetricCard label="Pendentes" value={String(items.filter((x) => ["scheduled", "confirmed"].includes(x.status)).length)} note="a realizar" icon={<Clock3 />} /></section>
-    <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ação</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{serviceLabel(item.service_kind)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4 text-right"><Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></td></tr>)}</tbody></table>{items.length === 0 && <Empty text="Nenhum atendimento registrado no mês." />}</div></section>
-    {editing && <AppointmentModal patients={patients} appointment={editing === "new" ? null : editing} defaultDate={`${month}-01`} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
+    <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ação</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4 text-right"><Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></td></tr>)}</tbody></table>{items.length === 0 && <Empty text="Nenhum atendimento registrado no mês." />}</div></section>
+    {editing && <AppointmentModal patients={patients} services={services} appointment={editing === "new" ? null : editing} defaultDate={`${month}-01`} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
   </>;
 }
 
@@ -398,7 +462,7 @@ function MaterialsPage() {
   useEffect(() => { void reload(); }, [reload]);
   const visible = items.filter((x) => x.title.toLowerCase().includes(query.toLowerCase()) || (x.category ?? "").toLowerCase().includes(query.toLowerCase()));
   return <>
-    <PageHeader title="Materiais" description="Armazene arquivos do consultório em bucket privado do Supabase." action={<Button variant="dashboard" onClick={() => setModal(true)}><Upload /> Adicionar material</Button>} />
+    <PageHeader title="Materiais" description="Armazene arquivos do consultório em uma área privada e protegida." action={<Button variant="dashboard" onClick={() => setModal(true)}><Upload /> Adicionar material</Button>} />
     <section className="dashboard-card rounded-2xl p-5"><div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar material..." /></div><div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{visible.map((item) => <article key={item.id} className="rounded-2xl border border-border bg-card/55 p-4"><span className="grid size-10 place-items-center rounded-xl bg-accent"><FileText className="size-5" /></span><h2 className="mt-4 text-sm font-medium">{item.title}</h2><p className="mt-1 text-[11px] text-muted-foreground">{item.category || "Sem categoria"} • {item.file_type || "Arquivo"}</p><p className="mt-3 text-[10px] text-muted-foreground">Adicionado em {dateLabel(item.created_at)}</p><div className="mt-4 flex gap-2"><Button variant="quiet" size="sm" className="flex-1" onClick={async () => { if (!item.file_path) return; const url = await openMaterial(item.file_path); window.open(url, "_blank", "noopener,noreferrer"); }}><Eye /> Abrir</Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Excluir ${item.title}?`)) { await deleteMaterial(item); await reload(); } }}><Trash2 /></Button></div></article>)}</div>{visible.length === 0 && <Empty text="Nenhum material cadastrado." />}</section>
     {modal && <MaterialModal onClose={() => setModal(false)} onSaved={async () => { setModal(false); await reload(); }} />}
   </>;
@@ -409,15 +473,46 @@ function SettingsPage({ settings, vaultKey, onVaultKey, onSettings }: { settings
   const [message, setMessage] = useState("");
   useEffect(() => { if (settings) setDraft({ professional_name: settings.professional_name, crp: settings.crp || "", phone: settings.phone || "", email: settings.email || "" }); }, [settings]);
   return <>
-    <PageHeader title="Configurações" description="Perfil, autenticação em duas etapas e cofre criptográfico dos prontuários." />
+    <PageHeader title="Configurações" description="Perfil, serviços oferecidos e proteção da conta e dos prontuários." />
     <div className="grid gap-4 xl:grid-cols-2">
       <SettingsCard title="Perfil profissional" description="Dados administrativos da profissional."><div className="grid gap-4 sm:grid-cols-2"><FieldEdit label="Nome" value={draft.professional_name} onChange={(v) => setDraft((d) => ({...d, professional_name:v}))} /><FieldEdit label="CRP" value={draft.crp} onChange={(v) => setDraft((d) => ({...d, crp:v}))} /><FieldEdit label="Telefone" value={draft.phone} onChange={(v) => setDraft((d) => ({...d, phone:v}))} /><FieldEdit label="E-mail" value={draft.email} onChange={(v) => setDraft((d) => ({...d, email:v}))} /></div><Button variant="quiet" size="sm" className="mt-4" onClick={async () => { const saved = await saveAppSettings(draft); onSettings(saved); setMessage("Perfil salvo."); }}>Salvar alterações</Button></SettingsCard>
+      <ServiceCatalogSettings settings={settings} onSettings={onSettings} />
       <MfaSettings />
       <VaultSettings settings={settings} vaultKey={vaultKey} onVaultKey={onVaultKey} onSettings={onSettings} />
-      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">RLS:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> cada abertura de prontuário exige um novo código do aplicativo autenticador.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o Supabase recebe somente texto cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha do cofre não é salva no banco. Sem ela, o conteúdo cifrado não pode ser recuperado.</p></div></SettingsCard>
+      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">Controle de acesso:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> cada abertura de prontuário exige um novo código do aplicativo autenticador.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o sistema armazena somente o conteúdo cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha do cofre não é salva no sistema. Sem ela, o conteúdo cifrado não pode ser recuperado.</p></div></SettingsCard>
     </div>
     {message && <p className="mt-4 text-xs text-primary">{message}</p>}
   </>;
+}
+
+function ServiceCatalogSettings({ settings, onSettings }: { settings: AppSettingsRow | null; onSettings: (s: AppSettingsRow) => void }) {
+  const [items, setItems] = useState<ServiceCatalogItem[]>(() => availableServices(settings).map((item) => ({ ...item })));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    setItems(availableServices(settings).map((item) => ({ ...item })));
+  }, [settings]);
+
+  const updateItem = (id: string, patch: Partial<ServiceCatalogItem>) => setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  const addItem = () => setItems((current) => [...current, { id: crypto.randomUUID(), name: "Novo serviço", kind: "other", active: true }]);
+  const removeItem = (id: string) => setItems((current) => current.filter((item) => item.id !== id));
+  const save = async () => {
+    const normalized = items.map((item) => ({ ...item, name: item.name.trim() })).filter((item) => item.name);
+    if (normalized.length === 0) { setMessage("Mantenha pelo menos um serviço cadastrado."); return; }
+    setSaving(true); setMessage("");
+    try {
+      const saved = await saveAppSettings({ service_catalog: normalized });
+      onSettings(saved);
+      setMessage("Serviços atualizados.");
+    } catch {
+      setMessage("Não foi possível salvar os serviços.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <SettingsCard title="Serviços oferecidos" description="Defina quais serviços aparecem ao criar ou editar um agendamento."><div className="space-y-3">{items.map((item) => <div key={item.id} className="grid gap-2 rounded-xl border border-border bg-background/45 p-3 sm:grid-cols-[1fr_150px_110px_auto]"><input value={item.name} maxLength={120} onChange={(e)=>updateItem(item.id,{name:e.target.value})} className="h-9 rounded-lg border border-border bg-background px-3 text-xs" aria-label="Nome do serviço" /><select value={item.kind} onChange={(e)=>updateItem(item.id,{kind:e.target.value as ServiceKind})} className="h-9 rounded-lg border border-border bg-background px-2 text-xs" aria-label="Categoria do serviço"><option value="session">Sessão</option><option value="psychological_test">Teste psicológico</option><option value="neuropsychology">Neuropsicologia</option><option value="company">Empresa</option><option value="other">Outro</option></select><select value={item.active ? "active" : "inactive"} onChange={(e)=>updateItem(item.id,{active:e.target.value === "active"})} className="h-9 rounded-lg border border-border bg-background px-2 text-xs" aria-label="Status do serviço"><option value="active">Ativo</option><option value="inactive">Inativo</option></select><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={()=>removeItem(item.id)} aria-label={`Excluir ${item.name}`}><Trash2 /></Button></div>)}</div><div className="mt-4 flex flex-wrap items-center justify-between gap-2"><Button variant="quiet" size="sm" onClick={addItem}><Plus /> Adicionar serviço</Button><Button variant="dashboard" size="sm" disabled={saving} onClick={()=>void save()}>{saving ? "Salvando..." : "Salvar serviços"}</Button></div>{message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}<p className="mt-3 text-[10px] leading-4 text-muted-foreground">A categoria mantém os cálculos financeiros corretos. O nome pode ser personalizado livremente.</p></SettingsCard>;
 }
 
 function MfaSettings() {
@@ -468,7 +563,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
     if (!key) { setMessage("Senha do cofre incorreta."); return; }
     onVaultKey(key); setPass(""); setMessage("Cofre desbloqueado nesta sessão.");
   };
-  return <SettingsCard title="Cofre clínico criptografado" description="A senha do cofre existe somente com a Anna e não é armazenada no Supabase.">{configured ? <div>{vaultKey ? <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary"><Check className="mr-2 inline size-4" /> Cofre desbloqueado nesta sessão</div> : <div className="flex gap-2"><input type="password" autoComplete="off" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" /><Button variant="dashboard" onClick={() => void unlock()}>Desbloquear</Button></div>}</div> : <div className="space-y-3"><input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Crie uma senha forte (mín. 16 caracteres)" /><input type="password" autoComplete="new-password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a senha" /><Button variant="dashboard" onClick={() => void setup()}>Criar cofre clínico</Button><p className="text-[10px] leading-4 text-destructive">Atenção: se esta senha for perdida, as evoluções criptografadas não poderão ser recuperadas.</p></div>}{message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}</SettingsCard>;
+  return <SettingsCard title="Cofre clínico criptografado" description="A senha do cofre existe somente com a Anna e não é armazenada no sistema.">{configured ? <div>{vaultKey ? <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary"><Check className="mr-2 inline size-4" /> Cofre desbloqueado nesta sessão</div> : <div className="flex gap-2"><input type="password" autoComplete="off" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" /><Button variant="dashboard" onClick={() => void unlock()}>Desbloquear</Button></div>}</div> : <div className="space-y-3"><input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Crie uma senha forte (mín. 16 caracteres)" /><input type="password" autoComplete="new-password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a senha" /><Button variant="dashboard" onClick={() => void setup()}>Criar cofre clínico</Button><p className="text-[10px] leading-4 text-destructive">Atenção: se esta senha for perdida, as evoluções criptografadas não poderão ser recuperadas.</p></div>}{message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}</SettingsCard>;
 }
 
 function PatientModal({ patient, onClose, onSaved }: { patient: PatientRow | null; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -487,32 +582,47 @@ function PatientModal({ patient, onClose, onSaved }: { patient: PatientRow | nul
   return <ModalShell onClose={onClose}><ModalHeader title={patient ? "Editar paciente" : "Novo paciente"} subtitle="Dados administrativos e regra de cobrança." onClose={onClose} /><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldEdit label="Nome completo" value={name} onChange={setName} /><FieldEdit label="WhatsApp" value={phone} onChange={setPhone} /><FieldEdit label="E-mail" value={email} onChange={setEmail} /><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={active ? "active":"paused"} onChange={(e)=>setActive(e.target.value === "active")} className="input-finance"><option value="active">Ativo</option><option value="paused">Pausado</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Cobrança</span><select value={billing} onChange={(e)=>setBilling(e.target.value as "session"|"package")} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote mensal</option></select></label>{billing === "package" && <><FieldEdit label="Valor do pacote" value={amount} onChange={setAmount} /><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Quando cobrar</span><select value={timing} onChange={(e)=>setTiming(e.target.value as "current_month"|"next_month")} className="input-finance"><option value="current_month">Início do próprio mês</option><option value="next_month">Início do mês seguinte</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Dia</span><input type="number" min={1} max={28} value={day} onChange={(e)=>setDay(Number(e.target.value))} className="input-finance" /></label></>}<label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>{error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim()} onClick={() => void save()}>{saving ? "Salvando..." : "Salvar"}</Button></div></div></ModalShell>;
 }
 
-function AppointmentModal({ patients, appointment, defaultDate, onClose, onSaved }: { patients: PatientRow[]; appointment: AppointmentRow | null; defaultDate: string; onClose: () => void; onSaved: () => Promise<void> }) {
+function AppointmentModal({ patients, services, appointment, defaultDate, onClose, onSaved }: { patients: PatientRow[]; services: ServiceCatalogItem[]; appointment: AppointmentRow | null; defaultDate: string; onClose: () => void; onSaved: () => Promise<void> }) {
   const requestId = useRef(crypto.randomUUID()).current;
   const initialDateTime = appointment ? new Date(appointment.scheduled_at) : new Date(`${defaultDate}T09:00:00`);
   const localValue = `${isoDateLocal(initialDateTime)}T${String(initialDateTime.getHours()).padStart(2,"0")}:${String(initialDateTime.getMinutes()).padStart(2,"0")}`;
-  const [patientId, setPatientId] = useState(appointment?.patient_id ?? ""); const [name, setName] = useState(appointment?.patient_name ?? ""); const [when, setWhen] = useState(localValue); const [duration, setDuration] = useState(appointment?.duration_minutes ?? 50); const [modality, setModality] = useState<"presential"|"online">(appointment?.modality ?? "presential"); const [status, setStatus] = useState<AppointmentStatus>(appointment?.status ?? "scheduled"); const [kind, setKind] = useState<ServiceKind>(appointment?.service_kind ?? "session"); const [amount, setAmount] = useState(String(appointment?.amount ?? "")); const [notes, setNotes] = useState(appointment?.notes_admin ?? ""); const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  const activeServices = services.filter((item) => item.active);
+  const matchingCurrent = appointment ? services.find((item) => item.kind === appointment.service_kind && item.name === appointmentServiceLabel(appointment)) : undefined;
+  const legacyCurrent: ServiceCatalogItem | null = appointment && !matchingCurrent ? { id: "__current__", name: appointmentServiceLabel(appointment), kind: appointment.service_kind, active: true } : null;
+  const serviceOptions = legacyCurrent ? [legacyCurrent, ...activeServices] : activeServices;
+  const initialServiceId = matchingCurrent?.id ?? legacyCurrent?.id ?? activeServices[0]?.id ?? "";
+
+  const [patientId, setPatientId] = useState(appointment?.patient_id ?? "");
+  const [name, setName] = useState(appointment?.patient_name ?? "");
+  const [when, setWhen] = useState(localValue);
+  const [duration, setDuration] = useState(appointment?.duration_minutes ?? 50);
+  const [modality, setModality] = useState<"presential"|"online">(appointment?.modality ?? "presential");
+  const [status, setStatus] = useState<AppointmentStatus>(appointment?.status ?? "scheduled");
+  const [serviceId, setServiceId] = useState(initialServiceId);
+  const [amount, setAmount] = useState(String(appointment?.amount ?? ""));
+  const [notes, setNotes] = useState(appointment?.notes_admin ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const selectedService = serviceOptions.find((item) => item.id === serviceId) ?? null;
   const selectPatient = (id: string) => { setPatientId(id); const p = patients.find((x)=>x.id===id); if (p) setName(p.full_name); };
   const save = async () => {
-    if (!when || !name.trim()) return;
+    if (!when || !name.trim() || !selectedService) return;
     setSaving(true); setError("");
     try {
       const parsed = new Date(when);
       if (Number.isNaN(parsed.getTime())) throw new Error("data inválida");
-      const payload = { patient_id:patientId||null, patient_name:name.trim(), scheduled_at:parsed.toISOString(), duration_minutes:duration, modality, status, service_kind:kind, amount:Number(amount.replace(",","."))||0, notes_admin:notes.trim()||null };
+      const payload = { patient_id:patientId||null, patient_name:name.trim(), scheduled_at:parsed.toISOString(), duration_minutes:duration, modality, status, service_kind:selectedService.kind, service_name:selectedService.name, amount:Number(amount.replace(",","."))||0, notes_admin:notes.trim()||null };
       if (appointment) {
         await updateAppointment(appointment.id, payload);
       } else {
-        await createAppointment(
-          payload as Omit<AppointmentRow, "id" | "created_at">,
-          requestId,
-        );
+        await createAppointment(payload as Omit<AppointmentRow, "id" | "created_at">, requestId);
       }
       await onSaved();
     } catch { setError("Não foi possível salvar. Confira os dados; o horário também pode estar ocupado por outro atendimento."); }
     finally { setSaving(false); }
   };
-  return <ModalShell onClose={onClose} width="max-w-2xl"><ModalHeader title={appointment ? "Editar atendimento" : "Novo atendimento"} subtitle="Agenda e sessão usam o mesmo registro para evitar duplicidade." onClose={onClose} /><div className="grid gap-4 p-5 sm:grid-cols-2"><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label><FieldEdit label="Paciente / cliente" value={name} onChange={setName} /><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>setWhen(e.target.value)} className="input-finance" /></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={modality} onChange={(e)=>setModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={status} onChange={(e)=>setStatus(e.target.value as AppointmentStatus)} className="input-finance"><option value="scheduled">Agendada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="no_show">Falta</option><option value="cancelled">Cancelada</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={kind} onChange={(e)=>setKind(e.target.value as ServiceKind)} className="input-finance"><option value="session">Sessão</option><option value="psychological_test">Teste psicológico</option><option value="neuropsychology">Neuropsicologia</option><option value="company">Empresa</option><option value="other">Outro</option></select></label><FieldEdit label="Valor" value={amount} onChange={setAmount} /><label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>{error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{appointment ? <Button variant="ghost" className="text-destructive" onClick={async()=>{ if(confirm("Cancelar este atendimento? O histórico será preservado.")){setError("");try{await deleteAppointment(appointment.id);await onSaved();}catch{setError("Não foi possível cancelar o atendimento.");}} }}><Trash2 /> Cancelar atendimento</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || !when} onClick={() => void save()}>{saving?"Salvando...":"Salvar"}</Button></div></div></div></ModalShell>;
+  return <ModalShell onClose={onClose} width="max-w-2xl"><ModalHeader title={appointment ? "Editar atendimento" : "Novo atendimento"} subtitle="Agenda e sessão usam o mesmo registro para evitar duplicidade." onClose={onClose} /><div className="grid gap-4 p-5 sm:grid-cols-2"><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label><FieldEdit label="Paciente / cliente" value={name} onChange={setName} /><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>setWhen(e.target.value)} className="input-finance" /></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={modality} onChange={(e)=>setModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={status} onChange={(e)=>setStatus(e.target.value as AppointmentStatus)} className="input-finance"><option value="scheduled">Agendada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="no_show">Falta</option><option value="cancelled">Cancelada</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={serviceId} onChange={(e)=>setServiceId(e.target.value)} className="input-finance" disabled={serviceOptions.length === 0}>{serviceOptions.length === 0 ? <option value="">Cadastre um serviço nas Configurações</option> : serviceOptions.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label><FieldEdit label="Valor" value={amount} onChange={setAmount} /><label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>{error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{appointment ? <Button variant="ghost" className="text-destructive" onClick={async()=>{ if(confirm("Cancelar este atendimento? O histórico será preservado.")){setError("");try{await deleteAppointment(appointment.id);await onSaved();}catch{setError("Não foi possível cancelar o atendimento.");}} }}><Trash2 /> Cancelar atendimento</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || !when || !selectedService} onClick={() => void save()}>{saving?"Salvando...":"Salvar"}</Button></div></div></div></ModalShell>;
 }
 
 function MaterialModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {
@@ -550,7 +660,7 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onClose, onVe
   const [granted, setGranted] = useState(false);
 
   useEffect(()=>{(async()=>{
-    if(!supabase){setPhase("blocked");setError("Supabase não configurado.");return;}
+    if(!supabase){setPhase("blocked");setError("Serviço de dados indisponível.");return;}
     const {data,error}=await supabase.auth.mfa.listFactors();
     if(error){setPhase("blocked");setError("Não foi possível verificar o autenticador.");return;}
     const factor=data.totp.find((x)=>x.status==="verified");
@@ -591,7 +701,7 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onClose, onVe
     onVaultKey(key);onVerified();
   };
 
-  return <ModalShell onClose={closeSecure}><div className="p-6"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span><Button variant="ghost" size="icon" onClick={closeSecure}><X /></Button></div><h2 className="mt-5 font-display text-xl">Prontuário — {patient.full_name}</h2>{phase==="checking"&&<p className="mt-3 text-sm text-muted-foreground">Verificando proteção...</p>}{phase==="blocked"&&<div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive">{error}</div>}{phase==="totp"&&<><p className="mt-2 text-sm text-muted-foreground">Digite o código atual do Google Authenticator. Cada abertura exige uma nova verificação.</p><input autoFocus inputMode="numeric" maxLength={6} value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} onKeyDown={(e)=>{if(e.key==="Enter")void verifyTotp();}} className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]" placeholder="000000" /><Button variant="dashboard" className="mt-4 w-full" disabled={code.length!==6} onClick={()=>void verifyTotp()}>Verificar código</Button></>}{phase==="vault"&&<><p className="mt-2 text-sm text-muted-foreground">Desbloqueie o cofre clínico. A senha permanece somente na memória desta aba e não é enviada ao Supabase.</p><input autoFocus type="password" value={pass} onChange={(e)=>setPass(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter")void unlock();}} className="mt-5 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" autoComplete="off" /><Button variant="dashboard" className="mt-4 w-full" disabled={!pass} onClick={()=>void unlock()}>Desbloquear cofre</Button></>}{error&&phase!=="blocked"&&<p className="mt-3 text-xs text-destructive">{error}</p>}</div></ModalShell>;
+  return <ModalShell onClose={closeSecure}><div className="p-6"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span><Button variant="ghost" size="icon" onClick={closeSecure}><X /></Button></div><h2 className="mt-5 font-display text-xl">Prontuário — {patient.full_name}</h2>{phase==="checking"&&<p className="mt-3 text-sm text-muted-foreground">Verificando proteção...</p>}{phase==="blocked"&&<div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive">{error}</div>}{phase==="totp"&&<><p className="mt-2 text-sm text-muted-foreground">Digite o código atual do Google Authenticator. Cada abertura exige uma nova verificação.</p><input autoFocus inputMode="numeric" maxLength={6} value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} onKeyDown={(e)=>{if(e.key==="Enter")void verifyTotp();}} className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]" placeholder="000000" /><Button variant="dashboard" className="mt-4 w-full" disabled={code.length!==6} onClick={()=>void verifyTotp()}>Verificar código</Button></>}{phase==="vault"&&<><p className="mt-2 text-sm text-muted-foreground">Desbloqueie o cofre clínico. A senha permanece somente na memória desta aba e não é enviada ao servidor.</p><input autoFocus type="password" value={pass} onChange={(e)=>setPass(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter")void unlock();}} className="mt-5 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" autoComplete="off" /><Button variant="dashboard" className="mt-4 w-full" disabled={!pass} onClick={()=>void unlock()}>Desbloquear cofre</Button></>}{error&&phase!=="blocked"&&<p className="mt-3 text-xs text-destructive">{error}</p>}</div></ModalShell>;
 }
 
 function PatientRecordModal({ patient, vaultKey, onClose }: { patient: PatientView; vaultKey: CryptoKey; onClose: () => void }) {

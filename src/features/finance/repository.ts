@@ -110,6 +110,38 @@ export async function markExpensePaid(id: string) {
   if (error) throw error;
 }
 
+export async function updateExpense(input: {
+  id: string;
+  category: string;
+  description: string;
+  competence_date: string;
+  due_date: string | null;
+  amount: number;
+  recurrence: "fixed" | "variable";
+  status: "pending" | "paid";
+}) {
+  if (!supabase) throw new Error("Supabase não configurado");
+  const allowedCategories = new Set(["transporte","contador_inss","aluguel","condominio","faxina","internet","outros_fixos","outros"]);
+  if (!allowedCategories.has(input.category)) throw new Error("Categoria inválida");
+  const { error } = await supabase.rpc("update_expense", {
+    p_id: input.id,
+    p_category: input.category,
+    p_description: cleanText(input.description, 500),
+    p_competence_date: input.competence_date,
+    p_due_date: input.due_date || null,
+    p_amount: cleanMoney(input.amount),
+    p_recurrence: input.recurrence,
+    p_paid: input.status === "paid",
+  });
+  if (error) throw error;
+}
+
+export async function deleteExpense(id: string) {
+  if (!supabase) throw new Error("Supabase não configurado");
+  const { error } = await supabase.rpc("delete_expense", { p_id: id });
+  if (error) throw error;
+}
+
 export async function markRevenuePaid(id: string, _amount?: number) {
   if (!supabase) throw new Error("Supabase não configurado");
   const { error } = await supabase.rpc("mark_billing_paid", { p_id: id });

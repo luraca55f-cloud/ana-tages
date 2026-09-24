@@ -6,6 +6,7 @@ import type {
   MaterialRow,
   PatientRow,
   ReportsBundle,
+  ServiceCatalogItem,
 } from "./types";
 
 const MAX_ROWS = 1_000;
@@ -118,10 +119,27 @@ export async function deletePatient(id: string) {
 export async function listAppointments(startIso: string, endIso: string) {
   const client = requireSupabase();
   const { data, error } = await client.from("appointments")
-    .select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,amount,notes_admin,created_at")
+    .select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,service_name,amount,notes_admin,created_at")
     .gte("scheduled_at", startIso).lt("scheduled_at", endIso).order("scheduled_at").limit(MAX_ROWS);
   if (error) throw error;
   return (data ?? []) as AppointmentRow[];
+}
+
+export async function listAllAppointments() {
+  const client = requireSupabase();
+  const pageSize = 500;
+  const rows: AppointmentRow[] = [];
+  for (let from = 0; from < 10_000; from += pageSize) {
+    const { data, error } = await client.from("appointments")
+      .select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,service_name,amount,notes_admin,created_at")
+      .order("scheduled_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as AppointmentRow[];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return rows;
 }
 
 export async function createAppointment(input: Omit<AppointmentRow, "id" | "created_at">, clientRequestId = crypto.randomUUID()) {
@@ -135,13 +153,14 @@ export async function createAppointment(input: Omit<AppointmentRow, "id" | "crea
     modality: input.modality === "online" ? "online" : "presential",
     status: input.status,
     service_kind: input.service_kind,
+    service_name: cleanText(input.service_name, 120),
     amount: safeMoney(input.amount),
     notes_admin: cleanText(input.notes_admin, 4000),
   };
-  const { data, error } = await client.from("appointments").insert(payload).select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,amount,notes_admin,created_at").single();
+  const { data, error } = await client.from("appointments").insert(payload).select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,service_name,amount,notes_admin,created_at").single();
   if (error) {
     if ((error as { code?: string }).code === "23505") {
-      const existing = await client.from("appointments").select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,amount,notes_admin,created_at").eq("client_request_id", clientRequestId).maybeSingle();
+      const existing = await client.from("appointments").select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,service_name,amount,notes_admin,created_at").eq("client_request_id", clientRequestId).maybeSingle();
       if (!existing.error && existing.data) return existing.data as AppointmentRow;
     }
     throw error;
@@ -159,9 +178,10 @@ export async function updateAppointment(id: string, patch: Partial<AppointmentRo
   if (patch.modality !== undefined) allowed["modality"] = patch.modality;
   if (patch.status !== undefined) allowed["status"] = patch.status;
   if (patch.service_kind !== undefined) allowed["service_kind"] = patch.service_kind;
+  if (patch.service_name !== undefined) allowed["service_name"] = cleanText(patch.service_name, 120);
   if (patch.amount !== undefined) allowed["amount"] = safeMoney(patch.amount);
   if (patch.notes_admin !== undefined) allowed["notes_admin"] = cleanText(patch.notes_admin, 4000);
-  const { data, error } = await client.from("appointments").update(allowed).eq("id", id).select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,amount,notes_admin,created_at").single();
+  const { data, error } = await client.from("appointments").update(allowed).eq("id", id).select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,service_name,amount,notes_admin,created_at").single();
   if (error) throw error;
   return data as AppointmentRow;
 }
@@ -284,11 +304,26 @@ export async function deleteClinicalNote(id: string) {
   if (error) throw error;
 }
 
+
+function cleanServiceCatalog(value: ServiceCatalogItem[] | undefined) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 30) throw new Error("Lista de serviços inválida");
+  const allowedKinds = new Set(["session", "psychological_test", "neuropsychology", "company", "other"]);
+  const ids = new Set<string>();
+  return value.map((item) => {
+    const id = String(item.id || "").trim().slice(0, 64);
+    const name = String(item.name || "").trim().slice(0, 120);
+    if (!id || ids.has(id) || !name || !allowedKinds.has(item.kind)) throw new Error("Serviço inválido");
+    ids.add(id);
+    return { id, name, kind: item.kind, active: Boolean(item.active) };
+  });
+}
+
 export async function getAppSettings() {
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
-  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv";
+  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,service_catalog";
   const { data, error } = await client.from("app_settings").select(fields).eq("owner_id", userData.user.id).maybeSingle();
   if (error) throw error;
   if (data) return data as AppSettingsRow;
@@ -309,7 +344,8 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
   if (patch.vault_salt !== undefined) allowed["vault_salt"] = patch.vault_salt;
   if (patch.vault_verifier_ciphertext !== undefined) allowed["vault_verifier_ciphertext"] = patch.vault_verifier_ciphertext;
   if (patch.vault_verifier_iv !== undefined) allowed["vault_verifier_iv"] = patch.vault_verifier_iv;
-  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv";
+  if (patch.service_catalog !== undefined) allowed["service_catalog"] = cleanServiceCatalog(patch.service_catalog);
+  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,service_catalog";
   const { data, error } = await client.from("app_settings").upsert(allowed, { onConflict: "owner_id" }).select(fields).single();
   if (error) throw error;
   return data as AppSettingsRow;
@@ -320,7 +356,7 @@ export async function loadReports(startDate: string, endExclusive: string): Prom
   const startTs = `${startDate}T00:00:00`;
   const endTs = `${endExclusive}T00:00:00`;
   const [appointmentsResult, billingResult, receivedResult, receivablesResult, expensesResult] = await Promise.all([
-    client.from("appointments").select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,amount,notes_admin,created_at").gte("scheduled_at", startTs).lt("scheduled_at", endTs).order("scheduled_at").limit(MAX_ROWS),
+    client.from("appointments").select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,service_name,amount,notes_admin,created_at").gte("scheduled_at", startTs).lt("scheduled_at", endTs).order("scheduled_at").limit(MAX_ROWS),
     client.from("billing_entries").select("id,source_type,amount,received_amount,status,competence_date,received_at").gte("competence_date", startDate).lt("competence_date", endExclusive).neq("status", "cancelled").limit(MAX_ROWS),
     client.from("billing_entries").select("id,received_amount,received_at").gte("received_at", startDate).lt("received_at", endExclusive).gt("received_amount", 0).limit(MAX_ROWS),
     client.from("billing_entries").select("id,amount,received_amount,status").in("status", ["pending", "partial"]).limit(MAX_ROWS),

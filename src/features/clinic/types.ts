@@ -16,6 +16,13 @@ export type PatientRow = {
 export type AppointmentStatus = "scheduled" | "confirmed" | "completed" | "cancelled" | "no_show";
 export type ServiceKind = "session" | "psychological_test" | "neuropsychology" | "company" | "other";
 
+export type ServiceCatalogItem = {
+  id: string;
+  name: string;
+  kind: ServiceKind;
+  active: boolean;
+};
+
 export type AppointmentRow = {
   id: string;
   patient_id: string | null;
@@ -25,6 +32,7 @@ export type AppointmentRow = {
   modality: "presential" | "online";
   status: AppointmentStatus;
   service_kind: ServiceKind;
+  service_name: string | null;
   amount: number;
   notes_admin: string | null;
   created_at: string;
@@ -61,6 +69,7 @@ export type AppSettingsRow = {
   vault_salt: string | null;
   vault_verifier_ciphertext: string | null;
   vault_verifier_iv: string | null;
+  service_catalog: ServiceCatalogItem[];
 };
 
 export type ReportsBundle = {

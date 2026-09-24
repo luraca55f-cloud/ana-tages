@@ -186,7 +186,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground">
         <section className="dashboard-card w-full max-w-lg rounded-3xl p-7">
           <span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span>
-          <h1 className="mt-5 font-display text-2xl">Configuração do Supabase pendente</h1>
+          <h1 className="mt-5 font-display text-2xl">Configuração do sistema pendente</h1>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">Configure <strong>VITE_SUPABASE_URL</strong> e <strong>VITE_SUPABASE_PUBLISHABLE_KEY</strong> antes de publicar.</p>
         </section>
       </main>

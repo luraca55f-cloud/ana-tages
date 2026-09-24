@@ -7,9 +7,11 @@ import {
   Clock3,
   FileText,
   Plus,
+  Pencil,
   ReceiptText,
   RefreshCw,
   Stethoscope,
+  Trash2,
   TrendingDown,
   TrendingUp,
   WalletCards,
@@ -18,7 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { createExpense, createRevenue, generatePackageBillingsForMonth, loadFinanceBundle, markExpensePaid, markRevenuePaid, updatePatientBilling } from "./repository";
+import { createExpense, createRevenue, deleteExpense, generatePackageBillingsForMonth, loadFinanceBundle, markExpensePaid, markRevenuePaid, updateExpense, updatePatientBilling } from "./repository";
 import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, RevenueSource } from "./types";
 
 const sourceLabels: Record<RevenueSource, string> = {
@@ -97,6 +99,7 @@ export function FinancePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [modal, setModal] = useState<"revenue" | "expense" | null>(null);
+  const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
   const [editingPatient, setEditingPatient] = useState<PatientBilling | null>(null);
   const [tab, setTab] = useState<"overview" | "receivables" | "expenses" | "billing">("overview");
 
@@ -109,7 +112,7 @@ export function FinancePage() {
       setData(await loadFinanceBundle(month));
     } catch (loadError) {
       console.error(loadError);
-      setError("Não foi possível carregar os dados financeiros do Supabase.");
+      setError("Não foi possível carregar os dados financeiros.");
     } finally {
       setLoading(false);
     }
@@ -163,7 +166,21 @@ export function FinancePage() {
 
   const saveExpense = async (entry: Omit<ExpenseEntry, "id" | "paid_at">, clientRequestId: string) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
-    await createExpense({ ...entry, client_request_id: clientRequestId });
+    if (editingExpense) {
+      await updateExpense({
+        id: editingExpense.id,
+        category: entry.category,
+        description: entry.description,
+        competence_date: entry.competence_date,
+        due_date: entry.due_date,
+        amount: entry.amount,
+        recurrence: entry.recurrence,
+        status: entry.status,
+      });
+      setEditingExpense(null);
+    } else {
+      await createExpense({ ...entry, client_request_id: clientRequestId });
+    }
     await reload();
   };
 
@@ -190,6 +207,24 @@ export function FinancePage() {
     }
   };
 
+  const startExpenseEdit = (entry: ExpenseEntry) => {
+    setEditingExpense(entry);
+    setModal("expense");
+  };
+
+  const removeExpense = async (entry: ExpenseEntry) => {
+    if (!isSupabaseConfigured) return;
+    const confirmed = window.confirm(`Excluir a despesa "${entry.description}"?`);
+    if (!confirmed) return;
+    setError("");
+    try {
+      await deleteExpense(entry.id);
+      await reload();
+    } catch {
+      setError("Não foi possível excluir a despesa.");
+    }
+  };
+
   const savePatientBilling = async (patient: PatientBilling) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
     await updatePatientBilling(patient);
@@ -209,7 +244,7 @@ export function FinancePage() {
         <div className="flex flex-wrap items-center gap-2">
           <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="h-10 rounded-xl border border-border bg-card/70 px-3 text-xs outline-none" />
           {isSupabaseConfigured && <Button variant="quiet" size="icon" onClick={() => void reload()} disabled={loading} aria-label="Atualizar"><RefreshCw className={loading ? "animate-spin" : ""} /></Button>}
-          <Button variant="quiet" onClick={() => setModal("expense")}><TrendingDown /> Nova despesa</Button>
+          <Button variant="quiet" onClick={() => { setEditingExpense(null); setModal("expense"); }}><TrendingDown /> Nova despesa</Button>
           <Button variant="dashboard" className="rounded-xl" onClick={() => setModal("revenue")}><TrendingUp /> Novo faturamento</Button>
         </div>
       </section>
@@ -277,7 +312,7 @@ export function FinancePage() {
         <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_330px]">
           <section className="dashboard-card rounded-2xl p-5">
             <div><h2 className="font-display text-lg">Despesas do período</h2><p className="mt-1 text-[11px] text-muted-foreground">Fixas e variáveis, incluindo transporte, contador/INSS, aluguel, condomínio, faxina e internet.</p></div>
-            <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[820px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Categoria</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th><th className="px-3 py-3 text-right font-medium">Ação</th></tr></thead><tbody>{data.expenses.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.description}</td><td className="px-3 py-4 text-xs">{expenseLabels[entry.category] ?? entry.category}</td><td className="px-3 py-4 text-xs">{entry.recurrence === "fixed" ? "Fixa" : "Variável"}</td><td className="px-3 py-4 text-xs">{entry.status === "paid" ? "Paga" : "Pendente"}</td><td className="px-3 py-4 text-right text-xs font-semibold">{money(entry.amount)}</td><td className="px-3 py-4 text-right">{entry.status === "pending" ? <Button size="sm" variant="quiet" onClick={() => void payExpense(entry)}><Check /> Marcar paga</Button> : <span className="text-[10px] text-muted-foreground">—</span>}</td></tr>)}</tbody></table></div>
+            <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[940px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Categoria</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th><th className="px-3 py-3 text-right font-medium">Ações</th></tr></thead><tbody>{data.expenses.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.description}</td><td className="px-3 py-4 text-xs">{expenseLabels[entry.category] ?? entry.category}</td><td className="px-3 py-4 text-xs">{entry.recurrence === "fixed" ? "Fixa" : "Variável"}</td><td className="px-3 py-4 text-xs">{entry.status === "paid" ? "Paga" : "Pendente"}</td><td className="px-3 py-4 text-right text-xs font-semibold">{money(entry.amount)}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => startExpenseEdit(entry)}><Pencil /> Editar</Button>{entry.status === "pending" && <Button size="sm" variant="quiet" onClick={() => void payExpense(entry)}><Check /> Marcar paga</Button>}<Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeExpense(entry)}><Trash2 /> Excluir</Button></div></td></tr>)}</tbody></table>{data.expenses.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma despesa lançada neste período.</p>}</div>
           </section>
           <section className="dashboard-card rounded-2xl p-5"><h2 className="font-display text-base">Despesas sobre o faturamento</h2><p className="mt-1 text-[10px] leading-4 text-muted-foreground">Percentual de cada categoria em relação ao faturamento do mês, como solicitado.</p><div className="mt-4 space-y-4">{expenseBreakdown.map(([category, value]) => { const percent = summary.billed > 0 ? (value / summary.billed) * 100 : 0; return <div key={category}><div className="flex justify-between gap-3 text-xs"><span>{expenseLabels[category] ?? category}</span><strong>{money(value)} • {percent.toFixed(1).replace(".", ",")}%</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, percent)}%` }} /></div></div>; })}</div><div className="mt-6 border-t border-border pt-4"><p className="text-[10px] text-muted-foreground">Despesas / faturamento</p><p className="mt-1 font-display text-2xl">{summary.expenseVsBilled.toFixed(1).replace(".", ",")}%</p><p className="mt-1 text-[10px] text-muted-foreground">{money(summary.expenses)} de {money(summary.billed)} faturados</p></div></section>
         </div>
@@ -286,19 +321,19 @@ export function FinancePage() {
       {tab === "billing" && (
         <section className="dashboard-card mt-4 rounded-2xl p-5">
           <div><h2 className="font-display text-lg">Pacotes e regra de cobrança</h2><p className="mt-1 max-w-3xl text-[11px] leading-5 text-muted-foreground">Defina por paciente se a cobrança é por sessão ou por pacote e, no pacote, se o pagamento ocorre no início do próprio mês ou no início do mês seguinte.</p></div>
-          <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Paciente</th><th className="px-3 py-3 font-medium">Modelo</th><th className="px-3 py-3 font-medium">Momento da cobrança</th><th className="px-3 py-3 font-medium">Dia</th><th className="px-3 py-3 font-medium">Valor do pacote</th><th className="px-3 py-3 text-right font-medium">Ação</th></tr></thead><tbody>{data.patients.map((patient) => <tr key={patient.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-[13px] font-medium">{patient.full_name}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? "Pacote" : "Por sessão"}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? patient.package_timing === "next_month" ? "Início do mês seguinte" : "Início do próprio mês" : "Após cada atendimento"}</td><td className="px-3 py-4 text-xs">{patient.billing_day ?? "—"}</td><td className="px-3 py-4 text-xs font-semibold">{patient.package_amount ? money(patient.package_amount) : "—"}</td><td className="px-3 py-4 text-right"><Button variant="quiet" size="sm" onClick={() => setEditingPatient(patient)}>Editar <ChevronRight /></Button></td></tr>)}</tbody></table>{data.patients.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Cadastre pacientes no Supabase para configurar os ciclos de cobrança.</p>}</div>
+          <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Paciente</th><th className="px-3 py-3 font-medium">Modelo</th><th className="px-3 py-3 font-medium">Momento da cobrança</th><th className="px-3 py-3 font-medium">Dia</th><th className="px-3 py-3 font-medium">Valor do pacote</th><th className="px-3 py-3 text-right font-medium">Ação</th></tr></thead><tbody>{data.patients.map((patient) => <tr key={patient.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-[13px] font-medium">{patient.full_name}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? "Pacote" : "Por sessão"}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? patient.package_timing === "next_month" ? "Início do mês seguinte" : "Início do próprio mês" : "Após cada atendimento"}</td><td className="px-3 py-4 text-xs">{patient.billing_day ?? "—"}</td><td className="px-3 py-4 text-xs font-semibold">{patient.package_amount ? money(patient.package_amount) : "—"}</td><td className="px-3 py-4 text-right"><Button variant="quiet" size="sm" onClick={() => setEditingPatient(patient)}>Editar <ChevronRight /></Button></td></tr>)}</tbody></table>{data.patients.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Cadastre pacientes para configurar os ciclos de cobrança.</p>}</div>
         </section>
       )}
 
       {modal === "revenue" && <RevenueModal onClose={() => setModal(null)} onSave={async (entry, requestId) => { await saveRevenue(entry, requestId); setModal(null); }} />}
-      {modal === "expense" && <ExpenseModal onClose={() => setModal(null)} onSave={async (entry, requestId) => { await saveExpense(entry, requestId); setModal(null); }} />}
+      {modal === "expense" && <ExpenseModal initialExpense={editingExpense} onClose={() => { setEditingExpense(null); setModal(null); }} onSave={async (entry, requestId) => { await saveExpense(entry, requestId); setEditingExpense(null); setModal(null); }} />}
       {editingPatient && <PatientBillingModal patient={editingPatient} onClose={() => setEditingPatient(null)} onSave={savePatientBilling} />}
     </>
   );
 }
 
 function Metric({ label, value, note, icon }: { label: string; value: string; note: string; icon: ReactNode }) {
-  return <article className="dashboard-card rounded-2xl p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className="grid size-11 place-items-center rounded-full bg-accent text-primary [&_svg]:size-5">{icon}</span></div><p className="mt-3 font-display text-[25px] leading-none">{value}</p><p className="mt-3 text-[11px] text-muted-foreground">{note}</p></article>;
+  return <article className="dashboard-card rounded-2xl p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className="grid size-11 place-items-center rounded-full bg-accent text-primary [&_svg]:size-5">{icon}</span></div><p className="mt-3 min-h-[2.6rem] font-display text-[28px] leading-[1.15] tabular-nums sm:text-[30px]">{value}</p><p className="mt-3 text-[11px] text-muted-foreground">{note}</p></article>;
 }
 
 function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
@@ -343,16 +378,17 @@ function RevenueModal({ onClose, onSave }: { onClose: () => void; onSave: (entry
   return <Modal title="Novo faturamento" subtitle="Registre atendimentos, pacotes, empresas, testes e outros serviços." onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : "Salvar faturamento"}</Button></div></div></Modal>;
 }
 
-function ExpenseModal({ onClose, onSave }: { onClose: () => void; onSave: (entry: Omit<ExpenseEntry, "id" | "paid_at">, requestId: string) => Promise<void> }) {
+function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: ExpenseEntry | null; onClose: () => void; onSave: (entry: Omit<ExpenseEntry, "id" | "paid_at">, requestId: string) => Promise<void> }) {
   const requestId = useRef(crypto.randomUUID()).current;
-  const [category, setCategory] = useState("transporte");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [competence, setCompetence] = useState(isoToday());
-  const [recurrence, setRecurrence] = useState<"fixed" | "variable">("variable");
-  const [paid, setPaid] = useState(true);
+  const [category, setCategory] = useState(initialExpense?.category ?? "transporte");
+  const [description, setDescription] = useState(initialExpense?.description ?? "");
+  const [amount, setAmount] = useState(initialExpense ? String(initialExpense.amount).replace(".", ",") : "");
+  const [competence, setCompetence] = useState(initialExpense?.competence_date ?? isoToday());
+  const [recurrence, setRecurrence] = useState<"fixed" | "variable">(initialExpense?.recurrence ?? "variable");
+  const [paid, setPaid] = useState(initialExpense ? initialExpense.status === "paid" : true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const isEditing = Boolean(initialExpense);
 
   const submit = async () => {
     const numeric = Number(amount.replace(",", "."));
@@ -362,13 +398,13 @@ function ExpenseModal({ onClose, onSave }: { onClose: () => void; onSave: (entry
     try {
       await onSave({ category, description: description.trim(), competence_date: competence, due_date: competence, amount: numeric, recurrence, status: paid ? "paid" : "pending" }, requestId);
     } catch {
-      setError("Não foi possível salvar a despesa. Tente novamente.");
+      setError(isEditing ? "Não foi possível atualizar a despesa. Tente novamente." : "Não foi possível salvar a despesa. Tente novamente.");
     } finally {
       setSaving(false);
     }
   };
 
-  return <Modal title="Nova despesa" subtitle="Registre os custos fixos e variáveis do consultório." onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Categoria"><select value={category} onChange={(event) => setCategory(event.target.value)} className="input-finance">{Object.entries(expenseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Ex.: Uber para atendimento" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Tipo"><select value={recurrence} onChange={(event) => setRecurrence(event.target.value as "fixed" | "variable")} className="input-finance"><option value="fixed">Fixa</option><option value="variable">Variável</option></select></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi paga</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !description.trim() || !amount}>{saving ? "Salvando..." : "Salvar despesa"}</Button></div></div></Modal>;
+  return <Modal title={isEditing ? "Editar despesa" : "Nova despesa"} subtitle={isEditing ? "Atualize os dados da despesa selecionada." : "Registre os custos fixos e variáveis do consultório."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Categoria"><select value={category} onChange={(event) => setCategory(event.target.value)} className="input-finance">{Object.entries(expenseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Ex.: Uber para atendimento" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Tipo"><select value={recurrence} onChange={(event) => setRecurrence(event.target.value as "fixed" | "variable")} className="input-finance"><option value="fixed">Fixa</option><option value="variable">Variável</option></select></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi paga</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !description.trim() || !amount}>{saving ? (isEditing ? "Salvando alterações..." : "Salvando...") : (isEditing ? "Salvar alterações" : "Salvar despesa")}</Button></div></div></Modal>;
 }
 
 function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBilling; onClose: () => void; onSave: (patient: PatientBilling) => Promise<void> }) {
