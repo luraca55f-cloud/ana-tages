@@ -1,4 +1,4 @@
-# TAGES CONSULTORIA ANNA — CLEAN START v2.0.1
+# TAGES CONSULTORIA ANNA — CLEAN START v2.0.2
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 

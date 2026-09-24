@@ -57,7 +57,7 @@ function TurnstileWidget({ onToken }: { onToken: (token: string) => void }) {
         script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
         script.async = true;
         script.defer = true;
-        script.dataset.tagesTurnstile = "true";
+        script.dataset["tagesTurnstile"] = "true";
         script.addEventListener("load", render, { once: true });
         document.head.appendChild(script);
       }
@@ -141,10 +141,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user || mfaStage !== "ready" || !supabase) return;
+    const client = supabase;
     let timer: ReturnType<typeof setTimeout>;
     const reset = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => { void supabase.auth.signOut(); }, idleTimeoutMinutes * 60_000);
+      timer = setTimeout(() => { void client.auth.signOut(); }, idleTimeoutMinutes * 60_000);
     };
     const events = ["pointerdown", "keydown", "mousemove", "touchstart"] as const;
     events.forEach((event) => window.addEventListener(event, reset, { passive: true }));
@@ -157,11 +158,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user || mfaStage !== "ready" || !supabase) return;
+    const client = supabase;
     let active = true;
     const verifyServerSession = async () => {
-      const { data, error: verifyError } = await supabase.auth.getUser();
+      const { data, error: verifyError } = await client.auth.getUser();
       if (!active) return;
-      if (verifyError || !data.user) await supabase.auth.signOut({ scope: "local" });
+      if (verifyError || !data.user) await client.auth.signOut({ scope: "local" });
     };
     const interval = window.setInterval(() => { void verifyServerSession(); }, 5 * 60_000);
     return () => { active = false; window.clearInterval(interval); };

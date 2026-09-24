@@ -1,4 +1,4 @@
-# NOTAS OBRIGATÓRIAS PARA IA / DESENVOLVEDOR — CLEAN START v2.0.1
+# NOTAS OBRIGATÓRIAS PARA IA / DESENVOLVEDOR — CLEAN START v2.0.2
 
 Leia antes de alterar este projeto.
 
@@ -88,3 +88,10 @@ No mínimo:
 6. se houver ambiente npm disponível: `npm install`, `npm run lint` e `npm run build`.
 
 Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/build correspondente.
+
+
+## Correções v2.0.2 — typecheck Cloudflare
+- Corrigidos acessos proibidos por `noPropertyAccessFromIndexSignature`.
+- Corrigido narrowing do cliente Supabase em callbacks assíncronos.
+- Corrigido parsing de mês com `noUncheckedIndexedAccess`.
+- O build só deve ser considerado válido após `npm run build` concluir incluindo `tsc --noEmit`.

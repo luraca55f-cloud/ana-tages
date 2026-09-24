@@ -122,10 +122,22 @@ function isoDateLocal(date = new Date()) {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+function parseMonth(month: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  const fallback = new Date();
+  const year = match ? Number(match[1]) : fallback.getFullYear();
+  const monthNumber = match ? Number(match[2]) : fallback.getMonth() + 1;
+  return {
+    year,
+    monthNumber: Math.max(1, Math.min(12, monthNumber)),
+  };
+}
+
 function monthBounds(month: string) {
-  const [y, m] = month.split("-").map(Number);
-  const next = new Date(y, m, 1);
-  const start = `${month}-01`;
+  const { year, monthNumber } = parseMonth(month);
+  const normalizedMonth = `${year}-${String(monthNumber).padStart(2, "0")}`;
+  const next = new Date(year, monthNumber, 1);
+  const start = `${normalizedMonth}-01`;
   const end = isoDateLocal(next);
   return { start, end };
 }
@@ -341,13 +353,13 @@ function ReportsPage() {
     if (!isSupabaseConfigured) return;
     const b = monthBounds(month);
     setData(await loadReports(b.start, b.end));
-    const [y, m] = month.split("-").map(Number);
-    const start = new Date(y, m - 6, 1);
-    const end = new Date(y, m, 1);
+    const { year, monthNumber } = parseMonth(month);
+    const start = new Date(year, monthNumber - 6, 1);
+    const end = new Date(year, monthNumber, 1);
     const hist = await loadFinanceHistory(isoDateLocal(start), isoDateLocal(end));
     const rows: Array<{ month: string; billed: number; expenses: number }> = [];
     for (let i = 0; i < 6; i++) {
-      const d = new Date(y, m - 6 + i, 1);
+      const d = new Date(year, monthNumber - 6 + i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       rows.push({ month: key, billed: hist.billings.filter((x) => String(x.competence_date).slice(0, 7) === key).reduce((s, x) => s + Number(x.amount), 0), expenses: hist.expenses.filter((x) => String(x.competence_date).slice(0, 7) === key).reduce((s, x) => s + Number(x.amount), 0) });
     }

@@ -1,36 +1,25 @@
-TAGES CONSULTORIA ANNA — CLEAN START v2.0.1
-Validation report generated for the reset package.
+ANA TAGES — CLEAN START v2.0.2
 
-VALIDATED IN THIS PACKAGE
-- Source/design/functionality preserved from the latest project base; functional code changes are limited to deployment-safe import paths and the modern Supabase publishable-key variable (with legacy fallback).
-- 20 source files scanned by scripts/verify-project.mjs.
-- All relative TS/TSX imports resolve to real local files.
-- No source import uses the problematic @/ alias.
-- All external packages imported by TS/TSX/CSS are declared in package.json.
-- tw-animate-css is declared because src/styles.css imports it.
-- react and react-dom are pinned to the same exact version.
-- @types/react and @types/react-dom are pinned to compatible 19.2.x versions.
-- Corrected Supabase migration is byte-identical to 202609220001_initial_schema_v1.2.1_CORRIGIDO.sql.
-- Migration does not contain the old tstzrange/make_interval exclusion-index expression that caused PostgreSQL ERROR 42P17.
-- Migration contains the corrected appointment-overlap trigger/advisory-lock logic.
-- Old .github workflows / Dependabot configuration are absent.
-- Old package-lock.json is absent and ignored during clean-start deployment.
-- TypeScript/TSX files passed parser-level syntax validation.
-- package.json, tsconfig.json and wrangler.jsonc passed syntax parsing.
+Origem da correção:
+- Build Cloudflare de 24/09/2026.
+- Instalação de dependências concluída.
+- verify:project concluído.
+- Vite client build concluído.
+- Vite SSR build concluído.
+- A falha ocorreu exclusivamente no passo `tsc --noEmit`.
 
-KNOWN HISTORICAL FAILURES ADDRESSED
-1. PostgreSQL ERROR 42P17: corrected migration preserved.
-2. GitHub setup-node cache failing without lockfile: old Actions removed.
-3. Prettier formatting blocking CI: no formatting gate in deployment.
-4. @types/react-dom 19.3 vs @types/react 19.2 peer conflict: compatible versions pinned.
-5. Missing tw-animate-css: dependency is present.
-6. Vite/TanStack route-split failing to resolve @/components/ui/button: aliases removed from application imports; explicit relative imports used.
-7. Dependabot creating noisy/broken PR runs during deployment: Dependabot removed from clean start.
+Erros do typecheck tratados nesta versão:
+1. TS4111 em dataset do Turnstile -> acesso por índice.
+2. TS18047 no Supabase dentro de callbacks -> cliente não nulo capturado em constante local.
+3. TS4111 nos objetos `allowed` de repository.ts -> acessos por índice.
+4. TS4111 nas variáveis `import.meta.env` -> acessos por índice.
+5. TS2345 / TS18048 no parsing de mês -> parsing validado sem valores undefined.
 
-LIMITATION
-A full npm install + Vite/TypeScript production build could not be executed inside the artifact-generation environment because direct npm registry access was unavailable. The package therefore does NOT claim a completed production build in this environment. The first Cloudflare Workers Build is the authoritative integration build. The package contains an early integrity verifier to catch the known local-import/dependency classes of failure before Vite runs.
+Validações locais possíveis neste ambiente:
+- `node scripts/verify-project.mjs`: OK.
+- Varredura de imports locais/dependências: OK pelo verificador do projeto.
+- Nenhum node_modules/package-lock antigo foi incluído no pacote.
 
-CANONICAL IDENTIFIERS
-- GitHub repository: ana-tages
-- Cloudflare Worker: ana-tages
-- npm package name: ana-tages
+Limitação do ambiente desta geração:
+- O registro npm não estava acessível (EAI_AGAIN), portanto não foi possível reinstalar as dependências localmente para repetir o build completo fora da Cloudflare.
+- O log da Cloudflare demonstrou que a instalação e os dois builds Vite da v2.0.1 já passavam; as mudanças v2.0.2 são restritas aos erros de TypeScript listados pelo próprio `tsc`.
