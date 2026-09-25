@@ -332,7 +332,7 @@ function DashboardPage({ patients, appointments, openModule, openRecord, onQuick
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <button onClick={() => onQuickAction("session")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><Video className="size-4" /></span><div><p className="text-xs font-semibold">Nova sessão</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar atendimento</p></div></button>
         <button onClick={() => onQuickAction("expense")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingDown className="size-4" /></span><div><p className="text-xs font-semibold">Nova despesa</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar gasto</p></div></button>
-        <button onClick={() => onQuickAction("revenue")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingUp className="size-4" /></span><div><p className="text-xs font-semibold">Novo faturamento</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar receita</p></div></button>
+        <button onClick={() => onQuickAction("revenue")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingUp className="size-4" /></span><div><p className="text-xs font-semibold">Nova receita</p><p className="mt-0.5 text-[10px] text-muted-foreground">Entrada financeira</p></div></button>
         <button onClick={() => onQuickAction("patient")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><UserPlus className="size-4" /></span><div><p className="text-xs font-semibold">Novo paciente</p><p className="mt-0.5 text-[10px] text-muted-foreground">Cadastrar paciente</p></div></button>
       </div>
     </section>
@@ -412,7 +412,7 @@ function PatientsPage({ patients, onNew, onEdit, onRecord, onChanged }: { patien
   const visible = patients.filter((p) => p.full_name.toLowerCase().includes(query.toLowerCase()) || (p.phone ?? "").includes(query));
   return <>
     <PageHeader title="Pacientes" description="Cadastro administrativo, regras de cobrança e acesso seguro ao prontuário clínico." action={<Button variant="dashboard" onClick={onNew}><UserPlus /> Novo paciente</Button>} />
-    <section className="dashboard-card rounded-2xl p-4 sm:p-5"><div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar paciente..." /></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[780px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Paciente</th><th className="px-3 py-3">Última sessão</th><th className="px-3 py-3">Próxima sessão</th><th className="px-3 py-3">Cobrança</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{visible.map((p) => <tr key={p.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{p.initials}</span><div><p className="text-[13px] font-medium">{p.full_name}</p><p className="text-[10px] text-muted-foreground">{p.phone || "Sem telefone"}</p></div></div></td><td className="px-3 py-4 text-xs text-muted-foreground">{p.lastSession}</td><td className="px-3 py-4 text-xs">{p.nextSession}</td><td className="px-3 py-4 text-xs">{p.billing_model === "package" ? `Pacote ${p.package_amount ? money(p.package_amount) : ""}` : "Por sessão"}</td><td className="px-3 py-4"><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></td><td className="px-3 py-4"><div className="flex justify-end gap-1"><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="ghost" size="icon" onClick={() => onEdit(p)}><Pencil /></Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /></Button></div></td></tr>)}</tbody></table>{visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}</div></section>
+    <section className="dashboard-card rounded-2xl p-4 sm:p-5"><div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar paciente..." /></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[780px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Paciente</th><th className="px-3 py-3">Última sessão</th><th className="px-3 py-3">Próxima sessão</th><th className="px-3 py-3">Cobrança</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{visible.map((p) => <tr key={p.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{p.initials}</span><div><p className="text-[13px] font-medium">{p.full_name}</p><p className="text-[10px] text-muted-foreground">{p.phone || "Sem telefone"}</p></div></div></td><td className="px-3 py-4 text-xs text-muted-foreground">{p.lastSession}</td><td className="px-3 py-4 text-xs">{p.nextSession}</td><td className="px-3 py-4 text-xs">{p.billing_model === "package" ? `Pacote ${p.package_amount ? money(p.package_amount) : ""}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</td><td className="px-3 py-4"><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></td><td className="px-3 py-4"><div className="flex justify-end gap-1"><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="ghost" size="icon" onClick={() => onEdit(p)}><Pencil /></Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /></Button></div></td></tr>)}</tbody></table>{visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}</div></section>
     <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Cada abertura exige código TOTP. O conteúdo das evoluções é criptografado no navegador antes de ser armazenado.</p></div></div></section>
   </>;
 }
@@ -675,7 +675,8 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   const [email, setEmail] = useState(patient?.email ?? "");
   const [active, setActive] = useState(patient?.active ?? true);
   const [billing, setBilling] = useState<"session"|"package">(patient?.billing_model ?? "session");
-  const [amount, setAmount] = useState(patient?.package_amount?.toString() ?? "");
+  const [sessionAmount, setSessionAmount] = useState(patient?.session_amount?.toString().replace(".", ",") ?? "");
+  const [packageAmount, setPackageAmount] = useState(patient?.package_amount?.toString().replace(".", ",") ?? "");
   const [timing, setTiming] = useState<"current_month"|"next_month">(patient?.package_timing ?? "current_month");
   const [day, setDay] = useState(patient?.billing_day ?? 5);
   const [notes, setNotes] = useState(patient?.notes_admin ?? "");
@@ -702,18 +703,41 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
 
   const save = async () => {
     if (!name.trim()) return;
+    const parsedSessionAmount = Number(sessionAmount.replace(",", ".")) || 0;
+    const parsedPackageAmount = Number(packageAmount.replace(",", ".")) || 0;
+    if (billing === "session" && parsedSessionAmount <= 0) { setError("Informe o valor padrão da sessão."); return; }
+    if (billing === "package" && parsedPackageAmount <= 0) { setError("Informe o valor do pacote."); return; }
     setSaving(true); setError("");
     try {
-      const patch = { full_name:name.trim(), phone:phone.trim()||null, email:email.trim()||null, active, billing_model:billing, package_amount:billing === "package" ? Number(amount.replace(",",".")) || null : null, package_timing:billing === "package" ? timing : null, billing_day:billing === "package" ? day : null, notes_admin:notes.trim()||null };
+      const patch = {
+        full_name:name.trim(), phone:phone.trim()||null, email:email.trim()||null, active,
+        billing_model:billing,
+        session_amount:billing === "session" ? parsedSessionAmount : null,
+        package_amount:billing === "package" ? parsedPackageAmount : null,
+        package_timing:billing === "package" ? timing : null,
+        billing_day:billing === "package" ? day : null,
+        notes_admin:notes.trim()||null,
+      };
       const savedPatient = patient ? await updatePatient(patient.id, patch) : await createPatient(patch as Partial<PatientRow> & Pick<PatientRow,"full_name">, requestId);
-      if (billing === "package" && scheduleNow) {
+      if (scheduleNow) {
         const service = sessionServices.find((item) => item.id === sessionServiceId);
-        if (!service) throw new Error("Cadastre um serviço de sessão antes de agendar o pacote.");
+        if (!service) throw new Error("Cadastre um serviço de sessão antes de agendar.");
         const validSlots = futureSlots.filter((slot) => slot.when);
         for (const slot of validSlots) {
           const parsed = new Date(slot.when);
-          if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) throw new Error("As sessões do pacote precisam ter datas futuras válidas.");
-          await createAppointment({ patient_id:savedPatient.id, patient_name:savedPatient.full_name, scheduled_at:parsed.toISOString(), duration_minutes:sessionDuration, modality:sessionModality, status:"scheduled", service_kind:"session", service_name:service.name, amount:0, notes_admin:"Sessão incluída no pacote" }, slot.id);
+          if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) throw new Error("As próximas sessões precisam ter datas futuras válidas.");
+          await createAppointment({
+            patient_id:savedPatient.id,
+            patient_name:savedPatient.full_name,
+            scheduled_at:parsed.toISOString(),
+            duration_minutes:sessionDuration,
+            modality:sessionModality,
+            status:"scheduled",
+            service_kind:"session",
+            service_name:service.name,
+            amount:billing === "package" ? 0 : parsedSessionAmount,
+            notes_admin:billing === "package" ? "Sessão incluída no pacote" : "Sessão futura agendada no cadastro do paciente",
+          }, slot.id);
         }
       }
       await onSaved();
@@ -723,7 +747,41 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
     }
     finally { setSaving(false); }
   };
-  return <ModalShell onClose={onClose} width="max-w-3xl"><ModalHeader title={patient ? "Editar paciente" : "Novo paciente"} subtitle="Dados administrativos, cobrança e sessões do pacote." onClose={onClose} /><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldEdit label="Nome completo" value={name} onChange={setName} /><FieldEdit label="WhatsApp" value={phone} onChange={setPhone} /><FieldEdit label="E-mail" value={email} onChange={setEmail} /><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={active ? "active":"paused"} onChange={(e)=>setActive(e.target.value === "active")} className="input-finance"><option value="active">Ativo</option><option value="paused">Pausado</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Cobrança</span><select value={billing} onChange={(e)=>setBilling(e.target.value as "session"|"package")} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote mensal</option></select></label>{billing === "package" && <><FieldEdit label="Valor do pacote" value={amount} onChange={setAmount} /><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Quando cobrar</span><select value={timing} onChange={(e)=>setTiming(e.target.value as "current_month"|"next_month")} className="input-finance"><option value="current_month">Início do próprio mês</option><option value="next_month">Início do mês seguinte</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Dia</span><input type="number" min={1} max={28} value={day} onChange={(e)=>setDay(Number(e.target.value))} className="input-finance" /></label><div className="sm:col-span-2 rounded-2xl border border-border bg-background/45 p-4"><label className="flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={scheduleNow} onChange={(e)=>toggleSchedule(e.target.checked)} /> Agendar próximas sessões deste pacote agora</label>{scheduleNow && <div className="mt-4 space-y-3"><div className="grid gap-3 sm:grid-cols-3"><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={sessionServiceId} onChange={(e)=>setSessionServiceId(e.target.value)} className="input-finance" disabled={sessionServices.length===0}>{sessionServices.length===0?<option value="">Sem serviço de sessão</option>:sessionServices.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={sessionModality} onChange={(e)=>setSessionModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração</span><input type="number" min={10} max={240} value={sessionDuration} onChange={(e)=>setSessionDuration(Number(e.target.value))} className="input-finance" /></label></div><div className="space-y-2">{futureSlots.map((slot,index)=><div key={slot.id} className="flex items-center gap-2"><span className="w-20 text-[10px] text-muted-foreground">Sessão {index+1}</span><input type="datetime-local" value={slot.when} onChange={(e)=>setFutureSlots((current)=>current.map((item)=>item.id===slot.id?{...item,when:e.target.value}:item))} className="input-finance flex-1" /><Button type="button" variant="ghost" size="icon" onClick={()=>setFutureSlots((current)=>current.filter((item)=>item.id!==slot.id))}><Trash2 /></Button></div>)}</div><Button type="button" variant="quiet" size="sm" onClick={addFutureSlot}><Plus /> Adicionar sessão</Button><p className="text-[10px] text-muted-foreground">Essas sessões ficam na Agenda e em Sessões como incluídas no pacote, sem cobrança individual.</p></div>}</div></>}<label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>{error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || (billing === "package" && !amount)} onClick={() => void save()}>{saving ? "Salvando..." : "Salvar"}</Button></div></div></ModalShell>;
+
+  return <ModalShell onClose={onClose} width="max-w-3xl">
+    <ModalHeader title={patient ? "Editar paciente" : "Novo paciente"} subtitle="Dados administrativos, cobrança e próximas sessões." onClose={onClose} />
+    <div className="grid gap-4 p-5 sm:grid-cols-2">
+      <FieldEdit label="Nome completo" value={name} onChange={setName} />
+      <FieldEdit label="WhatsApp" value={phone} onChange={setPhone} />
+      <FieldEdit label="E-mail" value={email} onChange={setEmail} />
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={active ? "active":"paused"} onChange={(e)=>setActive(e.target.value === "active")} className="input-finance"><option value="active">Ativo</option><option value="paused">Pausado</option></select></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Cobrança</span><select value={billing} onChange={(e)=>setBilling(e.target.value as "session"|"package")} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote mensal</option></select></label>
+      {billing === "session" && <FieldEdit label="Valor padrão da sessão" value={sessionAmount} onChange={setSessionAmount} />}
+      {billing === "package" && <>
+        <FieldEdit label="Valor do pacote" value={packageAmount} onChange={setPackageAmount} />
+        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Quando cobrar</span><select value={timing} onChange={(e)=>setTiming(e.target.value as "current_month"|"next_month")} className="input-finance"><option value="current_month">Início do próprio mês</option><option value="next_month">Início do mês seguinte</option></select></label>
+        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Dia</span><input type="number" min={1} max={28} value={day} onChange={(e)=>setDay(Number(e.target.value))} className="input-finance" /></label>
+      </>}
+
+      <div className="sm:col-span-2 rounded-2xl border border-border bg-background/45 p-4">
+        <label className="flex items-center gap-2 text-xs font-medium"><input type="checkbox" checked={scheduleNow} onChange={(e)=>toggleSchedule(e.target.checked)} /> Agendar próximas sessões agora</label>
+        {scheduleNow && <div className="mt-4 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={sessionServiceId} onChange={(e)=>setSessionServiceId(e.target.value)} className="input-finance" disabled={sessionServices.length===0}>{sessionServices.length===0?<option value="">Sem serviço de sessão</option>:sessionServices.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+            <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={sessionModality} onChange={(e)=>setSessionModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label>
+            <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração</span><input type="number" min={10} max={240} value={sessionDuration} onChange={(e)=>setSessionDuration(Number(e.target.value))} className="input-finance" /></label>
+          </div>
+          <div className="space-y-2">{futureSlots.map((slot,index)=><div key={slot.id} className="flex items-center gap-2"><span className="w-20 text-[10px] text-muted-foreground">Sessão {index+1}</span><input type="datetime-local" value={slot.when} onChange={(e)=>setFutureSlots((current)=>current.map((item)=>item.id===slot.id?{...item,when:e.target.value}:item))} className="input-finance flex-1" /><Button type="button" variant="ghost" size="icon" onClick={()=>setFutureSlots((current)=>current.filter((item)=>item.id!==slot.id))}><Trash2 /></Button></div>)}</div>
+          <Button type="button" variant="quiet" size="sm" onClick={addFutureSlot}><Plus /> Adicionar sessão</Button>
+          <p className="text-[10px] text-muted-foreground">{billing === "package" ? "As sessões serão incluídas no pacote, sem cobrança individual." : `Cada sessão futura será criada com o valor padrão de ${sessionAmount || "0,00"} e ficará A receber até o pagamento.`}</p>
+        </div>}
+      </div>
+
+      <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>
+      {error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}
+      <div className="flex justify-end gap-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || (billing === "session" ? !sessionAmount : !packageAmount)} onClick={() => void save()}>{saving ? "Salvando..." : "Salvar"}</Button></div>
+    </div>
+  </ModalShell>;
 }
 
 function AppointmentModal({ patients, services, appointment, defaultDate, onClose, onSaved }: { patients: PatientRow[]; services: ServiceCatalogItem[]; appointment: AppointmentRow | null; defaultDate: string; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -744,9 +802,9 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
   const [status, setStatus] = useState<AppointmentStatus>(appointment?.status ?? "scheduled");
   const [serviceId, setServiceId] = useState(initialServiceId);
   const [amount, setAmount] = useState(String(appointment?.amount ?? ""));
-  const [notes, setNotes] = useState(appointment?.notes_admin ?? "");
   const [paymentReceived, setPaymentReceived] = useState(false);
   const [currentPayment, setCurrentPayment] = useState<AppointmentPaymentRow | null>(null);
+  const [notes, setNotes] = useState(appointment?.notes_admin ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -768,11 +826,23 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
     return () => { active = false; };
   }, [appointment]);
 
+  const applyPatientSessionAmount = (patient: PatientRow | undefined, service: ServiceCatalogItem | null) => {
+    if (!patient || service?.kind !== "session") return;
+    if (patient.billing_model === "package") { setAmount(""); return; }
+    if (patient.session_amount != null && patient.session_amount > 0) setAmount(String(patient.session_amount).replace(".", ","));
+  };
   const selectPatient = (id: string) => {
     setPatientId(id);
     const selected = patients.find((item)=>item.id===id);
-    if (selected) setName(selected.full_name);
+    if (selected) { setName(selected.full_name); applyPatientSessionAmount(selected, selectedService); }
   };
+  const selectService = (id: string) => {
+    setServiceId(id);
+    const service = serviceOptions.find((item) => item.id === id) ?? null;
+    const patient = patients.find((item) => item.id === patientId);
+    applyPatientSessionAmount(patient, service);
+  };
+
   const save = async () => {
     if (!when || !name.trim() || !selectedService) return;
     setSaving(true); setError("");
@@ -789,7 +859,31 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
     }
     finally { setSaving(false); }
   };
-  return <ModalShell onClose={onClose} width="max-w-2xl"><ModalHeader title={appointment ? "Editar atendimento" : "Novo atendimento"} subtitle="Agenda, sessão e pagamento ficam vinculados no mesmo atendimento." onClose={onClose} /><div className="grid gap-4 p-5 sm:grid-cols-2"><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label><FieldEdit label="Paciente / cliente" value={name} onChange={setName} /><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>setWhen(e.target.value)} className="input-finance" /></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={modality} onChange={(e)=>setModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do atendimento</span><select value={status} onChange={(e)=>setStatus(e.target.value as AppointmentStatus)} className="input-finance"><option value="scheduled">Agendada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="no_show">Falta</option><option value="cancelled">Cancelada</option></select></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={serviceId} onChange={(e)=>setServiceId(e.target.value)} className="input-finance" disabled={serviceOptions.length === 0}>{serviceOptions.length === 0 ? <option value="">Cadastre um serviço nas Configurações</option> : serviceOptions.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>{isPackageSession?<label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="Incluído no pacote" disabled className="input-finance opacity-70" /></label>:<FieldEdit label="Valor" value={amount} onChange={setAmount} />}<div className="sm:col-span-2 rounded-xl border border-border bg-background/45 p-3">{isPackageSession?<div><p className="text-xs font-medium">Pagamento pelo pacote</p><p className="mt-1 text-[10px] text-muted-foreground">Esta sessão não gera cobrança individual.</p></div>:!canCharge?<div><p className="text-xs font-medium">Sem cobrança neste atendimento</p><p className="mt-1 text-[10px] text-muted-foreground">Informe um valor e mantenha o atendimento ativo para controlar o recebimento.</p></div>:<label className="flex items-start gap-2"><input type="checkbox" className="mt-0.5" checked={paymentReceived} disabled={paymentLocked} onChange={(e)=>setPaymentReceived(e.target.checked)} /><span><span className="block text-xs font-medium">{paymentLocked ? "Pagamento recebido" : "Pagamento já foi recebido"}</span><span className="mt-1 block text-[10px] text-muted-foreground">{paymentLocked ? "O recebimento já foi registrado no financeiro." : "Se ficar desmarcado, aparecerá como A receber até a baixa."}</span></span></label>}</div><label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>{error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{appointment ? <Button variant="ghost" className="text-destructive" onClick={async()=>{ if(confirm("Cancelar este atendimento? O histórico será preservado.")){setError("");try{await deleteAppointment(appointment.id);await onSaved();}catch{setError("Não foi possível cancelar o atendimento.");}} }}><Trash2 /> Cancelar atendimento</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || !when || !selectedService} onClick={() => void save()}>{saving?"Salvando...":"Salvar"}</Button></div></div></div></ModalShell>;
+
+  return <ModalShell onClose={onClose} width="max-w-2xl">
+    <ModalHeader title={appointment ? "Editar atendimento" : "Novo atendimento"} subtitle="Agenda, sessão e pagamento ficam vinculados no mesmo atendimento." onClose={onClose} />
+    <div className="grid gap-4 p-5 sm:grid-cols-2">
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
+      <FieldEdit label="Paciente / cliente" value={name} onChange={setName} />
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>setWhen(e.target.value)} className="input-finance" /></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={modality} onChange={(e)=>setModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do atendimento</span><select value={status} onChange={(e)=>setStatus(e.target.value as AppointmentStatus)} className="input-finance"><option value="scheduled">Agendada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="no_show">Falta</option><option value="cancelled">Cancelada</option></select></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={serviceId} onChange={(e)=>selectService(e.target.value)} className="input-finance" disabled={serviceOptions.length === 0}>{serviceOptions.length === 0 ? <option value="">Cadastre um serviço nas Configurações</option> : serviceOptions.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+      {isPackageSession ? <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="Incluído no pacote" disabled className="input-finance opacity-70" /></label> : <FieldEdit label="Valor" value={amount} onChange={setAmount} />}
+
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do pagamento</span>
+        <select className="input-finance" value={isPackageSession ? "package" : canCharge ? (paymentReceived ? "paid" : "pending") : "none"} disabled={isPackageSession || !canCharge || paymentLocked} onChange={(e)=>setPaymentReceived(e.target.value === "paid")}>
+          {isPackageSession ? <option value="package">Incluído no pacote</option> : !canCharge ? <option value="none">Sem cobrança</option> : <><option value="pending">A receber</option><option value="paid">Recebido</option></>}
+        </select>
+      </label>
+      <div className="rounded-xl border border-border bg-background/45 p-3 text-[10px] leading-4 text-muted-foreground">{isPackageSession ? "Esta sessão não gera cobrança individual." : paymentLocked ? "Pagamento já registrado no financeiro." : paymentReceived ? "Ao salvar, o recebimento será registrado no financeiro." : canCharge ? "A cobrança ficará na carteira a receber até a baixa." : "Informe um valor e mantenha o atendimento ativo para gerar cobrança."}</div>
+
+      <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>
+      {error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}
+      <div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{appointment ? <Button variant="ghost" className="text-destructive" onClick={async()=>{ if(confirm("Cancelar este atendimento? O histórico será preservado.")){setError("");try{await deleteAppointment(appointment.id);await onSaved();}catch{setError("Não foi possível cancelar o atendimento.");}} }}><Trash2 /> Cancelar atendimento</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || !when || !selectedService} onClick={() => void save()}>{saving?"Salvando...":"Salvar"}</Button></div></div>
+    </div>
+  </ModalShell>;
 }
 
 function MaterialModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => Promise<void> }) {

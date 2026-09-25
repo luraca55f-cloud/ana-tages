@@ -32,13 +32,15 @@ export async function loadFinanceBundle(month: string): Promise<FinanceBundle> {
   const ensure = await supabase.rpc("ensure_appointment_billings");
   if (ensure.error) throw ensure.error;
   const { start, endExclusive } = monthBounds(month);
+  const ensureFixed = await supabase.rpc("ensure_fixed_expenses", { p_month: start });
+  if (ensureFixed.error) throw ensureFixed.error;
 
   const [billedResult, receivedResult, receivablesResult, expensesResult, patientsResult] = await Promise.all([
     supabase.from("billing_entries").select("id,source_type,client_name,description,competence_date,issued_at,due_date,amount,status,received_amount,received_at").gte("competence_date", start).lt("competence_date", endExclusive).neq("status", "cancelled").order("competence_date", { ascending: false }).limit(MAX_ROWS),
     supabase.from("billing_entries").select("id,source_type,client_name,description,competence_date,issued_at,due_date,amount,status,received_amount,received_at").gte("received_at", start).lt("received_at", endExclusive).gt("received_amount", 0).order("received_at", { ascending: false }).limit(MAX_ROWS),
     supabase.from("billing_entries").select("id,source_type,client_name,description,competence_date,issued_at,due_date,amount,status,received_amount,received_at").in("status", ["pending", "partial"]).order("due_date", { ascending: true }).limit(MAX_ROWS),
-    supabase.from("expenses").select("id,category,description,competence_date,due_date,amount,recurrence,status,paid_at").gte("competence_date", start).lt("competence_date", endExclusive).order("competence_date", { ascending: false }).limit(MAX_ROWS),
-    supabase.from("patients").select("id,full_name,billing_model,package_amount,package_timing,billing_day").eq("active", true).is("archived_at", null).order("full_name", { ascending: true }).limit(MAX_ROWS),
+    supabase.from("expenses").select("id,category,description,competence_date,due_date,amount,recurrence,status,paid_at,fixed_rule_id").gte("competence_date", start).lt("competence_date", endExclusive).order("competence_date", { ascending: false }).limit(MAX_ROWS),
+    supabase.from("patients").select("id,full_name,billing_model,session_amount,package_amount,package_timing,billing_day").eq("active", true).is("archived_at", null).order("full_name", { ascending: true }).limit(MAX_ROWS),
   ]);
 
   const firstError = billedResult.error ?? receivedResult.error ?? receivablesResult.error ?? expensesResult.error ?? patientsResult.error;
@@ -93,15 +95,25 @@ export async function createExpense(input: {
   if (!supabase) throw new Error("Supabase não configurado");
   const allowedCategories = new Set(["transporte","contador_inss","aluguel","condominio","faxina","internet","outros_fixos","outros"]);
   if (!allowedCategories.has(input.category)) throw new Error("Categoria inválida");
-  const { error } = await supabase.rpc("create_expense", {
+  const payload = {
     p_category: input.category,
     p_description: cleanText(input.description, 500),
     p_competence_date: input.competence_date,
-    p_due_date: input.due_date || null,
     p_amount: cleanMoney(input.amount),
-    p_recurrence: input.recurrence,
     p_paid: input.status === "paid",
     p_client_request_id: input.client_request_id ?? crypto.randomUUID(),
+  };
+  if (input.recurrence === "fixed") {
+    const fixedDay = Number((input.due_date || input.competence_date).slice(8, 10));
+    if (!Number.isInteger(fixedDay) || fixedDay < 1 || fixedDay > 28) throw new Error("Dia fixo inválido");
+    const { error } = await supabase.rpc("create_fixed_expense", { ...payload, p_day_of_month: fixedDay });
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase.rpc("create_expense", {
+    ...payload,
+    p_due_date: input.due_date || null,
+    p_recurrence: "variable",
   });
   if (error) throw error;
 }
@@ -155,6 +167,7 @@ export async function updatePatientBilling(input: PatientBilling) {
   const model = input.billing_model === "package" ? "package" : "session";
   const { error } = await supabase.from("patients").update({
     billing_model: model,
+    session_amount: model === "session" && input.session_amount != null ? cleanMoney(input.session_amount) : null,
     package_amount: model === "package" && input.package_amount != null ? cleanMoney(input.package_amount) : null,
     package_timing: model === "package" ? (input.package_timing ?? "current_month") : null,
     billing_day: model === "package" ? Math.max(1, Math.min(28, Number(input.billing_day ?? 5))) : null,

@@ -5,6 +5,7 @@ export type PatientRow = {
   email: string | null;
   active: boolean;
   billing_model: "session" | "package";
+  session_amount: number | null;
   package_amount: number | null;
   package_timing: "current_month" | "next_month" | null;
   billing_day: number | null;
