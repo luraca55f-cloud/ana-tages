@@ -323,6 +323,10 @@ function DashboardPage({ patients: _patients, appointments, openModule, openReco
   const today = isoDateLocal();
   const now = Date.now();
   const todayAppointments = appointments.filter((item) => item.scheduled_at.slice(0, 10) === today && item.status !== "cancelled").sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at));
+  const upcomingAppointments = appointments
+    .filter((item) => item.scheduled_at.slice(0, 10) !== today && new Date(item.scheduled_at).getTime() > now && ["scheduled", "confirmed"].includes(item.status))
+    .sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at))
+    .slice(0, 6);
   const month = today.slice(0, 7);
   const monthly = appointments.filter((item) => item.scheduled_at.slice(0, 7) === month && item.status !== "cancelled");
   const monthlyFuture = monthly.filter((item) => new Date(item.scheduled_at).getTime() > now && ["scheduled", "confirmed"].includes(item.status)).length;
@@ -336,8 +340,17 @@ function DashboardPage({ patients: _patients, appointments, openModule, openReco
 
     <div className="mt-4 grid grid-cols-12 gap-4">
       <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-8">
-        <div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg">Agenda de hoje</h2><p className="mt-1 text-[11px] text-muted-foreground">{todayAppointments.length} atendimento(s) previsto(s) para hoje.</p></div><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div>
-        <div className="mt-4 space-y-2">{todayAppointments.length === 0 && <Empty text="Nenhum atendimento agendado para hoje." />}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)} • {item.duration_minutes} min</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div>
+        <div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg">Agenda e próximos atendimentos</h2><p className="mt-1 text-[11px] text-muted-foreground">Hoje e os próximos compromissos já agendados.</p></div><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hoje</p><span className="text-[10px] text-muted-foreground">{todayAppointments.length}</span></div>
+            <div className="space-y-2">{todayAppointments.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">Nenhum atendimento hoje.</div>}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)}</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Próximos</p><span className="text-[10px] text-muted-foreground">{upcomingAppointments.length}</span></div>
+            <div className="space-y-2">{upcomingAppointments.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">Nenhuma próxima sessão agendada.</div>}{upcomingAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-[72px] shrink-0 text-[11px] font-semibold">{new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.scheduled_at))}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)}</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div>
+          </div>
+        </div>
       </section>
 
       <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-4">
