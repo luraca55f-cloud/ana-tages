@@ -319,29 +319,53 @@ function PageHeader({ title, description, action }: { title: string; description
   return <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl leading-tight">{title}</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">{description}</p></div>{action}</section>;
 }
 
-function DashboardPage({ patients, appointments, openModule, openRecord, onQuickAction }: { patients: PatientView[]; appointments: AppointmentRow[]; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void; onQuickAction: (action: QuickAction) => void }) {
+function DashboardPage({ patients: _patients, appointments, openModule, openRecord: _openRecord, onQuickAction }: { patients: PatientView[]; appointments: AppointmentRow[]; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void; onQuickAction: (action: QuickAction) => void }) {
   const today = isoDateLocal();
+  const now = Date.now();
   const todayAppointments = appointments.filter((item) => item.scheduled_at.slice(0, 10) === today && item.status !== "cancelled").sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at));
   const month = today.slice(0, 7);
   const monthly = appointments.filter((item) => item.scheduled_at.slice(0, 7) === month && item.status !== "cancelled");
+  const monthlyFuture = monthly.filter((item) => new Date(item.scheduled_at).getTime() > now && ["scheduled", "confirmed"].includes(item.status)).length;
+  const monthlyCompleted = monthly.filter((item) => item.status === "completed").length;
+  const monthlyPresential = monthly.filter((item) => item.modality === "presential").length;
+  const monthlyOnline = monthly.filter((item) => item.modality === "online").length;
+
   return <>
-    <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl">Olá, Anna!</h1><p className="mt-2 text-sm text-muted-foreground">Resumo real do consultório para hoje.</p></div><p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeZone: "America/Sao_Paulo" }).format(new Date())}</p></section>
+    <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl">Olá, Anna!</h1><p className="mt-2 text-sm text-muted-foreground">O essencial do consultório em uma visão rápida.</p></div><p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeZone: "America/Sao_Paulo" }).format(new Date())}</p></section>
     <FinanceDashboardMetrics />
-    <section className="dashboard-card mt-4 rounded-2xl p-4 sm:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-display text-lg">Ações rápidas</h2><p className="mt-1 text-[10px] text-muted-foreground">Acesse os lançamentos mais usados sem procurar no menu.</p></div></div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <button onClick={() => onQuickAction("session")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><Video className="size-4" /></span><div><p className="text-xs font-semibold">Nova sessão</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar atendimento</p></div></button>
-        <button onClick={() => onQuickAction("expense")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingDown className="size-4" /></span><div><p className="text-xs font-semibold">Nova despesa</p><p className="mt-0.5 text-[10px] text-muted-foreground">Registrar gasto</p></div></button>
-        <button onClick={() => onQuickAction("revenue")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingUp className="size-4" /></span><div><p className="text-xs font-semibold">Nova receita</p><p className="mt-0.5 text-[10px] text-muted-foreground">Entrada financeira</p></div></button>
-        <button onClick={() => onQuickAction("patient")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><UserPlus className="size-4" /></span><div><p className="text-xs font-semibold">Novo paciente</p><p className="mt-0.5 text-[10px] text-muted-foreground">Cadastrar paciente</p></div></button>
-      </div>
-    </section>
+
     <div className="mt-4 grid grid-cols-12 gap-4">
-      <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-7"><div className="flex items-center justify-between"><h2 className="font-display text-lg">Agenda de hoje</h2><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div><div className="mt-4 space-y-2">{todayAppointments.length === 0 && <Empty text="Nenhum atendimento agendado para hoje." />}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl bg-background/55 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div></section>
-      <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-5"><div className="flex items-center justify-between"><h2 className="font-display text-lg">Pacientes</h2><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Pacientes")}>Ver todos</Button></div><div className="mt-3 space-y-1.5">{patients.slice(0, 5).map((patient) => <button key={patient.id} onClick={() => openRecord(patient)} className="flex w-full items-center gap-3 rounded-xl p-2.5 text-left hover:bg-accent/50"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{patient.initials}</span><div className="min-w-0"><p className="truncate text-[13px] font-medium">{patient.full_name}</p><p className="text-[10px] text-muted-foreground">Próxima: {patient.nextSession}</p></div></button>)}</div></section>
-      <section className="dashboard-card col-span-12 rounded-2xl p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos no mês</h2><p className="mt-1 text-[11px] text-muted-foreground">Acompanhamento dos atendimentos registrados.</p></div><div className="flex gap-4 text-[11px] text-muted-foreground"><span>Presenciais: <strong className="text-foreground">{monthly.filter((x) => x.modality === "presential").length}</strong></span><span>On-line: <strong className="text-foreground">{monthly.filter((x) => x.modality === "online").length}</strong></span><span>Concluídos: <strong className="text-foreground">{monthly.filter((x) => x.status === "completed").length}</strong></span></div></div><WeeklyAppointmentsChart appointments={monthly} /></section>
+      <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-8">
+        <div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg">Agenda de hoje</h2><p className="mt-1 text-[11px] text-muted-foreground">{todayAppointments.length} atendimento(s) previsto(s) para hoje.</p></div><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div>
+        <div className="mt-4 space-y-2">{todayAppointments.length === 0 && <Empty text="Nenhum atendimento agendado para hoje." />}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)} • {item.duration_minutes} min</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div>
+      </section>
+
+      <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-4">
+        <div><h2 className="font-display text-lg">Ações rápidas</h2><p className="mt-1 text-[11px] text-muted-foreground">Cadastros e lançamentos mais usados.</p></div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          <button onClick={() => onQuickAction("session")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><Video className="size-4" /></span><div><p className="text-xs font-semibold">Nova sessão</p><p className="mt-0.5 text-[10px] text-muted-foreground">Atendimento</p></div></button>
+          <button onClick={() => onQuickAction("expense")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingDown className="size-4" /></span><div><p className="text-xs font-semibold">Nova despesa</p><p className="mt-0.5 text-[10px] text-muted-foreground">Saída</p></div></button>
+          <button onClick={() => onQuickAction("revenue")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><TrendingUp className="size-4" /></span><div><p className="text-xs font-semibold">Nova receita</p><p className="mt-0.5 text-[10px] text-muted-foreground">Entrada</p></div></button>
+          <button onClick={() => onQuickAction("patient")} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 p-3 text-left transition-colors hover:bg-accent/60"><span className="grid size-9 place-items-center rounded-xl bg-accent text-primary"><UserPlus className="size-4" /></span><div><p className="text-xs font-semibold">Novo paciente</p><p className="mt-0.5 text-[10px] text-muted-foreground">Cadastro</p></div></button>
+        </div>
+      </section>
+
+      <section className="dashboard-card col-span-12 rounded-2xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos deste mês</h2><p className="mt-1 text-[11px] text-muted-foreground">Resumo direto, sem misturar com o financeiro.</p></div><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Sessões")}>Ver atendimentos <ChevronRight /></Button></div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <DashboardMiniStat label="Total" value={String(monthly.length)} note="registrados" />
+          <DashboardMiniStat label="Futuros" value={String(monthlyFuture)} note="a realizar" />
+          <DashboardMiniStat label="Concluídos" value={String(monthlyCompleted)} note="finalizados" />
+          <DashboardMiniStat label="Presenciais" value={String(monthlyPresential)} note="no consultório" />
+          <DashboardMiniStat label="On-line" value={String(monthlyOnline)} note="remotos" />
+        </div>
+      </section>
     </div>
   </>;
+}
+
+function DashboardMiniStat({ label, value, note }: { label: string; value: string; note: string }) {
+  return <div className="rounded-xl border border-border bg-background/45 p-4"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-2 font-display text-2xl leading-none">{value}</p><p className="mt-2 text-[10px] text-muted-foreground">{note}</p></div>;
 }
 
 function AgendaPage({ patients, services, onChanged }: { patients: PatientRow[]; services: ServiceCatalogItem[]; onChanged: () => Promise<void> }) {
@@ -424,6 +448,11 @@ function SessionsPage({ patients, services, onChanged, initialCreate = false, on
   const [payments, setPayments] = useState<AppointmentPaymentRow[]>([]);
   const [editing, setEditing] = useState<AppointmentRow | "new" | null>(null);
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [serviceFilter, setServiceFilter] = useState("all");
+  const [modalityFilter, setModalityFilter] = useState("all");
+  const [attendanceFilter, setAttendanceFilter] = useState("all");
+  const [paymentFilter, setPaymentFilter] = useState("all");
 
   const reload = useCallback(async () => {
     if (!isSupabaseConfigured) return;
@@ -478,6 +507,30 @@ function SessionsPage({ patients, services, onChanged, initialCreate = false, on
     if (payment.status === "cancelled") return { label: "Cancelado", tone: "muted" as const };
     return { label: "A receber", tone: "warn" as const };
   };
+  const paymentFilterKey = (item: AppointmentRow) => {
+    if (isPackageSession(item)) return "package";
+    const payment = paymentMap.get(item.id);
+    if (!payment || item.amount <= 0) return "none";
+    return payment.status;
+  };
+  const serviceOptions = Array.from(new Set(items.map((item) => appointmentServiceLabel(item)))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const filteredItems = items.filter((item) => {
+    const query = searchQuery.trim().toLocaleLowerCase("pt-BR");
+    const matchesQuery = !query || (item.patient_name ?? "").toLocaleLowerCase("pt-BR").includes(query) || appointmentServiceLabel(item).toLocaleLowerCase("pt-BR").includes(query);
+    const matchesService = serviceFilter === "all" || appointmentServiceLabel(item) === serviceFilter;
+    const matchesModality = modalityFilter === "all" || item.modality === modalityFilter;
+    const matchesAttendance = attendanceFilter === "all" || item.status === attendanceFilter;
+    const matchesPayment = paymentFilter === "all" || paymentFilterKey(item) === paymentFilter;
+    return matchesQuery && matchesService && matchesModality && matchesAttendance && matchesPayment;
+  });
+  const hasFilters = Boolean(searchQuery.trim()) || serviceFilter !== "all" || modalityFilter !== "all" || attendanceFilter !== "all" || paymentFilter !== "all";
+  const clearFilters = () => {
+    setSearchQuery("");
+    setServiceFilter("all");
+    setModalityFilter("all");
+    setAttendanceFilter("all");
+    setPaymentFilter("all");
+  };
 
   return <>
     <PageHeader title="Sessões" description="Acompanhe sessões, testes, avaliações, próximos atendimentos e pagamentos." action={<Button variant="dashboard" onClick={() => setEditing("new")}><Plus /> Registrar atendimento</Button>} />
@@ -503,8 +556,19 @@ function SessionsPage({ patients, services, onChanged, initialCreate = false, on
     </section>
 
     <section className="dashboard-card mt-4 rounded-2xl p-5">
-      <div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos e pagamentos</h2><p className="mt-1 text-[11px] text-muted-foreground">Acompanhe o serviço e o que ainda falta receber.</p></div><span className="text-[10px] text-muted-foreground">{loading ? "Carregando..." : `${items.length} registro(s)`}</span></div>
-      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1040px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Atendimento</th><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{items.map((item) => { const payment = paymentMap.get(item.id); const state = paymentState(item); return <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{isPackageSession(item) ? "Pacote" : money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.tone === "ok" ? "bg-primary/8 text-primary" : state.tone === "warn" ? "bg-secondary/15 text-secondary" : "bg-muted text-muted-foreground"}`}>{state.label}</span></td><td className="px-3 py-4"><div className="flex justify-end gap-2">{payment && (payment.status === "pending" || payment.status === "partial") && !isPackageSession(item) && <Button size="sm" variant="quiet" onClick={() => void receiveAppointment(item)}><Check /> Receber</Button>}<Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></div></td></tr>; })}</tbody></table>{items.length === 0 && !loading && <Empty text="Nenhum atendimento encontrado neste período." />}</div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos e serviços</h2><p className="mt-1 text-[11px] text-muted-foreground">Filtre por paciente, serviço, modalidade, atendimento ou pagamento.</p></div><span className="text-[10px] text-muted-foreground">{loading ? "Carregando..." : `${filteredItems.length} de ${items.length} registro(s)`}</span></div>
+      <div className="mt-4 rounded-2xl border border-border bg-background/35 p-3">
+        <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground"><Filter className="size-4" /> Filtros</div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+          <label className="relative xl:col-span-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Paciente ou serviço" className="h-10 w-full rounded-xl border border-border bg-card pl-9 pr-3 text-xs outline-none" /></label>
+          <select value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-xs"><option value="all">Todos os serviços</option>{serviceOptions.map((service) => <option key={service} value={service}>{service}</option>)}</select>
+          <select value={modalityFilter} onChange={(event) => setModalityFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-xs"><option value="all">Todas as modalidades</option><option value="presential">Presencial</option><option value="online">On-line</option></select>
+          <select value={attendanceFilter} onChange={(event) => setAttendanceFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-xs"><option value="all">Todos os atendimentos</option><option value="scheduled">Agendado</option><option value="confirmed">Confirmado</option><option value="completed">Concluído</option><option value="no_show">Faltou</option><option value="cancelled">Cancelado</option></select>
+          <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)} className="h-10 rounded-xl border border-border bg-card px-3 text-xs"><option value="all">Todos os pagamentos</option><option value="pending">A receber</option><option value="partial">Parcial</option><option value="paid">Recebido</option><option value="package">Incluído no pacote</option><option value="none">Sem cobrança</option><option value="cancelled">Cancelado</option></select>
+        </div>
+        {hasFilters && <div className="mt-2 flex justify-end"><Button size="sm" variant="ghost" onClick={clearFilters}>Limpar filtros</Button></div>}
+      </div>
+      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1040px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Atendimento</th><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{filteredItems.map((item) => { const payment = paymentMap.get(item.id); const state = paymentState(item); return <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{isPackageSession(item) ? "Pacote" : money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.tone === "ok" ? "bg-primary/8 text-primary" : state.tone === "warn" ? "bg-secondary/15 text-secondary" : "bg-muted text-muted-foreground"}`}>{state.label}</span></td><td className="px-3 py-4"><div className="flex justify-end gap-2">{payment && (payment.status === "pending" || payment.status === "partial") && !isPackageSession(item) && <Button size="sm" variant="quiet" onClick={() => void receiveAppointment(item)}><Check /> Receber</Button>}<Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></div></td></tr>; })}</tbody></table>{filteredItems.length === 0 && !loading && <Empty text={hasFilters ? "Nenhum atendimento corresponde aos filtros." : "Nenhum atendimento encontrado neste período."} />}</div>
     </section>
     {editing && <AppointmentModal patients={patients} services={services} appointment={editing === "new" ? null : editing} defaultDate={`${month}-01`} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
   </>;
@@ -872,12 +936,23 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={serviceId} onChange={(e)=>selectService(e.target.value)} className="input-finance" disabled={serviceOptions.length === 0}>{serviceOptions.length === 0 ? <option value="">Cadastre um serviço nas Configurações</option> : serviceOptions.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
       {isPackageSession ? <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="Incluído no pacote" disabled className="input-finance opacity-70" /></label> : <FieldEdit label="Valor" value={amount} onChange={setAmount} />}
 
-      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do pagamento</span>
-        <select className="input-finance" value={isPackageSession ? "package" : canCharge ? (paymentReceived ? "paid" : "pending") : "none"} disabled={isPackageSession || !canCharge || paymentLocked} onChange={(e)=>setPaymentReceived(e.target.value === "paid")}>
-          {isPackageSession ? <option value="package">Incluído no pacote</option> : !canCharge ? <option value="none">Sem cobrança</option> : <><option value="pending">A receber</option><option value="paid">Recebido</option></>}
-        </select>
-      </label>
-      <div className="rounded-xl border border-border bg-background/45 p-3 text-[10px] leading-4 text-muted-foreground">{isPackageSession ? "Esta sessão não gera cobrança individual." : paymentLocked ? "Pagamento já registrado no financeiro." : paymentReceived ? "Ao salvar, o recebimento será registrado no financeiro." : canCharge ? "A cobrança ficará na carteira a receber até a baixa." : "Informe um valor e mantenha o atendimento ativo para gerar cobrança."}</div>
+      <div className="rounded-2xl border border-border bg-accent/30 p-4 sm:col-span-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold">Pagamento desta sessão</p>
+            <p className="mt-1 text-[10px] leading-4 text-muted-foreground">Defina se este atendimento ainda está a receber ou se o valor já foi recebido.</p>
+          </div>
+          <span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${isPackageSession || !canCharge ? "bg-muted text-muted-foreground" : paymentReceived || paymentLocked ? "bg-primary/10 text-primary" : "bg-secondary/15 text-secondary"}`}>
+            {isPackageSession ? "Incluído no pacote" : !canCharge ? "Sem cobrança" : paymentReceived || paymentLocked ? "Recebido" : currentPayment?.status === "partial" ? "Parcial" : "A receber"}
+          </span>
+        </div>
+        <label className="mt-3 block"><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do pagamento</span>
+          <select className="input-finance" value={isPackageSession ? "package" : !canCharge ? "none" : paymentLocked ? "paid" : paymentReceived ? "paid" : currentPayment?.status === "partial" ? "partial" : "pending"} disabled={isPackageSession || !canCharge || paymentLocked} onChange={(e)=>setPaymentReceived(e.target.value === "paid")}>
+            {isPackageSession ? <option value="package">Incluído no pacote</option> : !canCharge ? <option value="none">Sem cobrança</option> : <><option value="pending">A receber</option>{currentPayment?.status === "partial" && <option value="partial">Parcial</option>}<option value="paid">Recebido</option></>}
+          </select>
+        </label>
+        <p className="mt-2 text-[10px] leading-4 text-muted-foreground">{isPackageSession ? "Esta sessão está coberta pelo pacote do paciente e não gera cobrança individual." : paymentLocked ? "Pagamento já registrado no Financeiro." : paymentReceived ? "Ao salvar, o valor será registrado como recebido no Financeiro." : currentPayment?.status === "partial" ? `Pagamento parcial registrado. Falta receber ${money(Math.max(0, Number(currentPayment.amount) - Number(currentPayment.received_amount || 0)))}.` : canCharge ? `O valor de ${money(numericAmount)} ficará na carteira a receber até a baixa.` : "Informe um valor e mantenha o atendimento ativo para gerar a cobrança."}</p>
+      </div>
 
       <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>
       {error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}

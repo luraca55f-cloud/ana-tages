@@ -177,6 +177,32 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
     return Array.from(grouped.entries()).sort((a, b) => b[1] - a[1]);
   }, [data.expenses]);
 
+  const latestMovements = useMemo(() => {
+    const revenues = data.billed.map((entry) => ({
+      key: `revenue-${entry.id}`,
+      date: entry.competence_date,
+      type: "revenue" as const,
+      title: entry.client_name,
+      description: entry.description,
+      origin: sourceLabels[entry.source_type],
+      status: entry.status === "paid" ? "Recebido" : entry.status === "partial" ? "Parcial" : entry.status === "cancelled" ? "Cancelado" : "A receber",
+      amount: Number(entry.amount),
+    }));
+    const expenses = data.expenses.map((entry) => ({
+      key: `expense-${entry.id}`,
+      date: entry.competence_date,
+      type: "expense" as const,
+      title: entry.description,
+      description: expenseLabels[entry.category] ?? entry.category,
+      origin: entry.recurrence === "fixed" ? "Despesa fixa" : "Despesa variável",
+      status: entry.status === "paid" ? "Paga" : "Pendente",
+      amount: Number(entry.amount),
+    }));
+    return [...revenues, ...expenses]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 12);
+  }, [data.billed, data.expenses]);
+
   const saveRevenue = async (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, clientRequestId: string) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
     await createRevenue({
@@ -324,8 +350,8 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
           </section>
 
           <section className="dashboard-card rounded-2xl p-5 xl:col-span-2">
-            <div><h2 className="font-display text-lg">Últimos lançamentos faturados</h2><p className="mt-1 text-[11px] text-muted-foreground">Competência, cliente, origem, situação e valor.</p></div>
-            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Competência</th><th className="px-3 py-3 font-medium">Cliente</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th></tr></thead><tbody>{data.billed.slice(0, 10).map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.client_name}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4"><Status status={entry.status} /></td><td className="px-3 py-4 text-right text-xs font-semibold">{money(entry.amount)}</td></tr>)}</tbody></table></div>
+            <div><h2 className="font-display text-lg">Movimentações recentes</h2><p className="mt-1 text-[11px] text-muted-foreground">Entradas e despesas do período em uma única visão.</p></div>
+            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Lançamento</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th></tr></thead><tbody>{latestMovements.map((entry) => <tr key={entry.key} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.date)}</td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${entry.type === "expense" ? "bg-destructive/8 text-destructive" : "bg-primary/8 text-primary"}`}>{entry.type === "expense" ? "Despesa" : "Entrada"}</span></td><td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td><td className="px-3 py-4 text-xs">{entry.origin}</td><td className="px-3 py-4 text-xs">{entry.status}</td><td className={`px-3 py-4 text-right text-xs font-semibold ${entry.type === "expense" ? "text-destructive" : "text-foreground"}`}>{entry.type === "expense" ? `- ${money(entry.amount)}` : money(entry.amount)}</td></tr>)}</tbody></table>{latestMovements.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma movimentação neste período.</p>}</div>
           </section>
         </div>
       )}
