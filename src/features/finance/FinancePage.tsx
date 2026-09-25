@@ -57,16 +57,16 @@ function currentMonth() {
 }
 
 function previousMonth(month: string) {
-  const parts = month.split("-");
-  const year = Number(parts[0] ?? 0);
-  const monthNumber = Number(parts[1] ?? 1);
-  const date = new Date(year, monthNumber - 2, 1);
+  const [yearText, monthText] = month.split("-");
+  const date = new Date(Number(yearText), Number(monthText) - 2, 1);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function percentChange(current: number, previous: number) {
-  if (previous === 0) return null;
-  return ((current - previous) / Math.abs(previous)) * 100;
+function changeLabel(current: number, previous: number) {
+  if (previous <= 0) return current > 0 ? "movimento iniciado neste mês" : "sem movimento no mês anterior";
+  const percent = ((current - previous) / previous) * 100;
+  const sign = percent > 0 ? "+" : "";
+  return `${sign}${percent.toFixed(0).replace(".", ",")}% em relação ao mês anterior`;
 }
 
 function dateLabel(value: string | null) {
@@ -85,102 +85,37 @@ function emptyBundle(): FinanceBundle {
 
 export function FinanceDashboardMetrics() {
   const [data, setData] = useState<FinanceBundle>(emptyBundle);
-  const [previousData, setPreviousData] = useState<FinanceBundle>(emptyBundle);
+  const [previous, setPrevious] = useState<FinanceBundle>(emptyBundle);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     const month = currentMonth();
-    Promise.all([
-      generatePackageBillingsForMonth(month).then(() => loadFinanceBundle(month)),
-      loadFinanceBundle(previousMonth(month)),
-    ]).then(([current, previous]) => {
-      setData(current);
-      setPreviousData(previous);
-    }).catch((error) => console.error(error));
+    const prev = previousMonth(month);
+    generatePackageBillingsForMonth(month)
+      .then(() => Promise.all([loadFinanceBundle(month), loadFinanceBundle(prev)]))
+      .then(([currentData, previousData]) => { setData(currentData); setPrevious(previousData); })
+      .catch((error) => console.error(error));
   }, []);
 
   const received = data.receivedInPeriod.reduce((sum, item) => sum + Number(item.received_amount || 0), 0);
   const receivable = data.receivables.reduce((sum, item) => sum + outstanding(item), 0);
   const expenses = data.expenses.reduce((sum, item) => sum + Number(item.amount), 0);
   const result = received - expenses;
-
-  const previousReceived = previousData.receivedInPeriod.reduce((sum, item) => sum + Number(item.received_amount || 0), 0);
-  const previousExpenses = previousData.expenses.reduce((sum, item) => sum + Number(item.amount), 0);
+  const previousReceived = previous.receivedInPeriod.reduce((sum, item) => sum + Number(item.received_amount || 0), 0);
+  const previousExpenses = previous.expenses.reduce((sum, item) => sum + Number(item.amount), 0);
   const previousResult = previousReceived - previousExpenses;
 
   return (
     <section aria-label="Indicadores financeiros" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <DashboardMetric
-        label="Recebido no mês"
-        value={money(received)}
-        note="entradas efetivamente recebidas"
-        icon={<CircleDollarSign />}
-        change={percentChange(received, previousReceived)}
-        positiveWhenUp
-      />
-      <DashboardMetric
-        label="A receber"
-        value={money(receivable)}
-        note={`${data.receivables.length} cobrança(s) pendente(s)`}
-        icon={<Clock3 />}
-      />
-      <DashboardMetric
-        label="Despesas do mês"
-        value={money(expenses)}
-        note="gastos fixos e variáveis"
-        icon={<TrendingDown />}
-        change={percentChange(expenses, previousExpenses)}
-        positiveWhenUp={false}
-      />
-      <DashboardMetric
-        label="Resultado do mês"
-        value={money(result)}
-        note="receitas menos despesas"
-        icon={<TrendingUp />}
-        change={percentChange(result, previousResult)}
-        positiveWhenUp
-        valueTone={result < 0 ? "negative" : result > 0 ? "positive" : "neutral"}
-      />
+      <Metric label="Recebido no mês" value={money(received)} note={changeLabel(received, previousReceived)} icon={<CircleDollarSign />} tone={received > previousReceived ? "positive" : "default"} />
+      <Metric label="A receber" value={money(receivable)} note={`${data.receivables.length} cobrança(s) pendente(s)`} icon={<Clock3 />} />
+      <Metric label="Despesas do mês" value={money(expenses)} note="gastos fixos e variáveis" icon={<TrendingDown />} />
+      <Metric label="Resultado (lucro/prejuízo)" value={money(result)} note={changeLabel(result, previousResult)} icon={<WalletCards />} tone={result < 0 ? "negative" : result > 0 ? "positive" : "default"} />
     </section>
   );
 }
 
-function DashboardMetric({
-  label,
-  value,
-  note,
-  icon,
-  change,
-  positiveWhenUp = true,
-  valueTone = "neutral",
-}: {
-  label: string;
-  value: string;
-  note: string;
-  icon: ReactNode;
-  change?: number | null;
-  positiveWhenUp?: boolean;
-  valueTone?: "neutral" | "positive" | "negative";
-}) {
-  const hasChange = typeof change === "number" && Number.isFinite(change);
-  const up = hasChange ? change >= 0 : false;
-  const positive = hasChange ? (up ? positiveWhenUp : !positiveWhenUp) : false;
-  const valueClass = valueTone === "negative" ? "text-destructive" : valueTone === "positive" ? "text-primary" : "text-foreground";
-  return <article className="dashboard-card rounded-2xl p-5">
-    <div className="flex items-start justify-between gap-3">
-      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
-      <span className="grid size-10 place-items-center rounded-full bg-accent text-primary [&_svg]:size-4">{icon}</span>
-    </div>
-    <p className={`mt-3 font-display text-[30px] leading-[1.1] tabular-nums ${valueClass}`}>{value}</p>
-    <p className="mt-2 text-[10px] text-muted-foreground">{note}</p>
-    {hasChange && <div className={`mt-3 inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${positive ? "bg-primary/8 text-primary" : "bg-destructive/8 text-destructive"}`}>
-      <span>{up ? "↗" : "↘"}</span>
-      <span>{up ? "+" : ""}{change.toFixed(0).replace(".", ",")}% em relação ao mês anterior</span>
-    </div>}
-  </article>;
-}
-
-export function FinancePage({ initialModal = null, onInitialModalHandled }: { initialModal?: "revenue" | "expense" | null; onInitialModalHandled?: () => void } = {}) {
+export function FinancePage({ initialModal = null, onInitialModalHandled }: { initialModal?: "revenue" | "expense" | null; onInitialModalHandled?: () => void }) {
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState<FinanceBundle>(emptyBundle);
   const [loading, setLoading] = useState(false);
@@ -241,6 +176,32 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
     data.expenses.forEach((item) => grouped.set(item.category, (grouped.get(item.category) ?? 0) + Number(item.amount)));
     return Array.from(grouped.entries()).sort((a, b) => b[1] - a[1]);
   }, [data.expenses]);
+
+  const latestMovements = useMemo(() => {
+    const revenues = data.billed.map((entry) => ({
+      key: `revenue-${entry.id}`,
+      date: entry.competence_date,
+      type: "revenue" as const,
+      title: entry.client_name,
+      description: entry.description,
+      origin: sourceLabels[entry.source_type],
+      status: entry.status === "paid" ? "Recebido" : entry.status === "partial" ? "Parcial" : entry.status === "cancelled" ? "Cancelado" : "A receber",
+      amount: Number(entry.amount),
+    }));
+    const expenses = data.expenses.map((entry) => ({
+      key: `expense-${entry.id}`,
+      date: entry.competence_date,
+      type: "expense" as const,
+      title: entry.description,
+      description: expenseLabels[entry.category] ?? entry.category,
+      origin: entry.recurrence === "fixed" ? "Despesa fixa" : "Despesa variável",
+      status: entry.status === "paid" ? "Paga" : "Pendente",
+      amount: Number(entry.amount),
+    }));
+    return [...revenues, ...expenses]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 12);
+  }, [data.billed, data.expenses]);
 
   const saveRevenue = async (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, clientRequestId: string) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
@@ -308,7 +269,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
 
   const removeExpense = async (entry: ExpenseEntry) => {
     if (!isSupabaseConfigured) return;
-    const confirmed = window.confirm(`Excluir a despesa "${entry.description}"?`);
+    const confirmed = window.confirm(entry.recurrence === "fixed" ? `Excluir a despesa "${entry.description}" e encerrar a recorrência mensal?` : `Excluir a despesa "${entry.description}"?`);
     if (!confirmed) return;
     setError("");
     try {
@@ -339,7 +300,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
           <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="h-10 rounded-xl border border-border bg-card/70 px-3 text-xs outline-none" />
           {isSupabaseConfigured && <Button variant="quiet" size="icon" onClick={() => void reload()} disabled={loading} aria-label="Atualizar"><RefreshCw className={loading ? "animate-spin" : ""} /></Button>}
           <Button variant="quiet" onClick={() => { setEditingExpense(null); setModal("expense"); }}><TrendingDown /> Nova despesa</Button>
-          <Button variant="dashboard" className="rounded-xl" onClick={() => setModal("revenue")}><TrendingUp /> Novo faturamento</Button>
+          <Button variant="dashboard" className="rounded-xl" onClick={() => setModal("revenue")}><TrendingUp /> Nova receita</Button>
         </div>
       </section>
 
@@ -389,8 +350,8 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
           </section>
 
           <section className="dashboard-card rounded-2xl p-5 xl:col-span-2">
-            <div><h2 className="font-display text-lg">Últimos lançamentos faturados</h2><p className="mt-1 text-[11px] text-muted-foreground">Competência, cliente, origem, situação e valor.</p></div>
-            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Competência</th><th className="px-3 py-3 font-medium">Cliente</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th></tr></thead><tbody>{data.billed.slice(0, 10).map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.client_name}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4"><Status status={entry.status} /></td><td className="px-3 py-4 text-right text-xs font-semibold">{money(entry.amount)}</td></tr>)}</tbody></table></div>
+            <div><h2 className="font-display text-lg">Movimentações recentes</h2><p className="mt-1 text-[11px] text-muted-foreground">Entradas e despesas do período em uma única visão.</p></div>
+            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Lançamento</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th></tr></thead><tbody>{latestMovements.map((entry) => <tr key={entry.key} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.date)}</td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${entry.type === "expense" ? "bg-destructive/8 text-destructive" : "bg-primary/8 text-primary"}`}>{entry.type === "expense" ? "Despesa" : "Entrada"}</span></td><td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td><td className="px-3 py-4 text-xs">{entry.origin}</td><td className="px-3 py-4 text-xs">{entry.status}</td><td className={`px-3 py-4 text-right text-xs font-semibold ${entry.type === "expense" ? "text-destructive" : "text-foreground"}`}>{entry.type === "expense" ? `- ${money(entry.amount)}` : money(entry.amount)}</td></tr>)}</tbody></table>{latestMovements.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma movimentação neste período.</p>}</div>
           </section>
         </div>
       )}
@@ -406,7 +367,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
         <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_330px]">
           <section className="dashboard-card rounded-2xl p-5">
             <div><h2 className="font-display text-lg">Despesas do período</h2><p className="mt-1 text-[11px] text-muted-foreground">Fixas e variáveis, incluindo transporte, contador/INSS, aluguel, condomínio, faxina e internet.</p></div>
-            <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[940px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Categoria</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th><th className="px-3 py-3 text-right font-medium">Ações</th></tr></thead><tbody>{data.expenses.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.description}</td><td className="px-3 py-4 text-xs">{expenseLabels[entry.category] ?? entry.category}</td><td className="px-3 py-4 text-xs">{entry.recurrence === "fixed" ? "Fixa" : "Variável"}</td><td className="px-3 py-4 text-xs">{entry.status === "paid" ? "Paga" : "Pendente"}</td><td className="px-3 py-4 text-right text-xs font-semibold">{money(entry.amount)}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => startExpenseEdit(entry)}><Pencil /> Editar</Button>{entry.status === "pending" && <Button size="sm" variant="quiet" onClick={() => void payExpense(entry)}><Check /> Marcar paga</Button>}<Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeExpense(entry)}><Trash2 /> Excluir</Button></div></td></tr>)}</tbody></table>{data.expenses.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma despesa lançada neste período.</p>}</div>
+            <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[940px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Categoria</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th><th className="px-3 py-3 text-right font-medium">Ações</th></tr></thead><tbody>{data.expenses.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.description}</td><td className="px-3 py-4 text-xs">{expenseLabels[entry.category] ?? entry.category}</td><td className="px-3 py-4 text-xs">{entry.recurrence === "fixed" ? `Fixa • dia ${Number((entry.due_date ?? entry.competence_date).slice(8, 10))}` : "Variável"}</td><td className="px-3 py-4 text-xs">{entry.status === "paid" ? "Paga" : "Pendente"}</td><td className="px-3 py-4 text-right text-xs font-semibold">{money(entry.amount)}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => startExpenseEdit(entry)}><Pencil /> Editar</Button>{entry.status === "pending" && <Button size="sm" variant="quiet" onClick={() => void payExpense(entry)}><Check /> Marcar paga</Button>}<Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeExpense(entry)}><Trash2 /> Excluir</Button></div></td></tr>)}</tbody></table>{data.expenses.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma despesa lançada neste período.</p>}</div>
           </section>
           <section className="dashboard-card rounded-2xl p-5"><h2 className="font-display text-base">Despesas sobre o faturamento</h2><p className="mt-1 text-[10px] leading-4 text-muted-foreground">Percentual de cada categoria em relação ao faturamento do mês, como solicitado.</p><div className="mt-4 space-y-4">{expenseBreakdown.map(([category, value]) => { const percent = summary.billed > 0 ? (value / summary.billed) * 100 : 0; return <div key={category}><div className="flex justify-between gap-3 text-xs"><span>{expenseLabels[category] ?? category}</span><strong>{money(value)} • {percent.toFixed(1).replace(".", ",")}%</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, percent)}%` }} /></div></div>; })}</div><div className="mt-6 border-t border-border pt-4"><p className="text-[10px] text-muted-foreground">Despesas / faturamento</p><p className="mt-1 font-display text-2xl">{summary.expenseVsBilled.toFixed(1).replace(".", ",")}%</p><p className="mt-1 text-[10px] text-muted-foreground">{money(summary.expenses)} de {money(summary.billed)} faturados</p></div></section>
         </div>
@@ -426,8 +387,9 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
   );
 }
 
-function Metric({ label, value, note, icon }: { label: string; value: string; note: string; icon: ReactNode }) {
-  return <article className="dashboard-card rounded-2xl p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className="grid size-11 place-items-center rounded-full bg-accent text-primary [&_svg]:size-5">{icon}</span></div><p className="mt-3 min-h-[2.6rem] font-display text-[28px] leading-[1.15] tabular-nums sm:text-[30px]">{value}</p><p className="mt-3 text-[11px] text-muted-foreground">{note}</p></article>;
+function Metric({ label, value, note, icon, tone = "default" }: { label: string; value: string; note: string; icon: ReactNode; tone?: "default" | "positive" | "negative" }) {
+  const valueTone = tone === "negative" ? "text-destructive" : tone === "positive" ? "text-primary" : "text-foreground";
+  return <article className="dashboard-card rounded-2xl p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-primary [&_svg]:size-5">{icon}</span></div><p className={`mt-3 min-h-[2.6rem] font-display text-[28px] leading-[1.15] tabular-nums sm:text-[30px] ${valueTone}`}>{value}</p><p className="mt-3 min-h-4 text-[11px] leading-4 text-muted-foreground">{note}</p></article>;
 }
 
 function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
@@ -463,13 +425,13 @@ function RevenueModal({ onClose, onSave }: { onClose: () => void; onSave: (entry
     try {
       await onSave({ source_type: source, client_name: client.trim(), description: description.trim() || sourceLabels[source], competence_date: competence, issued_at: isoToday(), due_date: dueDate || null, amount: numeric, status: paid ? "paid" : "pending" }, requestId);
     } catch {
-      setError("Não foi possível salvar o faturamento. Tente novamente.");
+      setError("Não foi possível salvar a receita. Tente novamente.");
     } finally {
       setSaving(false);
     }
   };
 
-  return <Modal title="Novo faturamento" subtitle="Registre atendimentos, pacotes, empresas, testes e outros serviços." onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : "Salvar faturamento"}</Button></div></div></Modal>;
+  return <Modal title="Nova receita" subtitle="Registre entradas de atendimentos, pacotes, empresas, testes e outros serviços." onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Receita / entrada</div><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : "Salvar receita"}</Button></div></div></Modal>;
 }
 
 function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: ExpenseEntry | null; onClose: () => void; onSave: (entry: Omit<ExpenseEntry, "id" | "paid_at">, requestId: string) => Promise<void> }) {
@@ -479,6 +441,7 @@ function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: Ex
   const [amount, setAmount] = useState(initialExpense ? String(initialExpense.amount).replace(".", ",") : "");
   const [competence, setCompetence] = useState(initialExpense?.competence_date ?? isoToday());
   const [recurrence, setRecurrence] = useState<"fixed" | "variable">(initialExpense?.recurrence ?? "variable");
+  const [fixedDay, setFixedDay] = useState(() => Number((initialExpense?.due_date ?? initialExpense?.competence_date ?? isoToday()).slice(8, 10)) || 5);
   const [paid, setPaid] = useState(initialExpense ? initialExpense.status === "paid" : true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -487,10 +450,15 @@ function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: Ex
   const submit = async () => {
     const numeric = Number(amount.replace(",", "."));
     if (!description.trim() || !Number.isFinite(numeric) || numeric <= 0) return;
+    if (recurrence === "fixed" && (!Number.isInteger(fixedDay) || fixedDay < 1 || fixedDay > 28)) {
+      setError("Informe um dia fixo entre 1 e 28.");
+      return;
+    }
+    const dueDate = recurrence === "fixed" ? `${competence.slice(0, 7)}-${String(fixedDay).padStart(2, "0")}` : competence;
     setSaving(true);
     setError("");
     try {
-      await onSave({ category, description: description.trim(), competence_date: competence, due_date: competence, amount: numeric, recurrence, status: paid ? "paid" : "pending" }, requestId);
+      await onSave({ category, description: description.trim(), competence_date: competence, due_date: dueDate, amount: numeric, recurrence, status: paid ? "paid" : "pending", fixed_rule_id: initialExpense?.fixed_rule_id ?? null }, requestId);
     } catch {
       setError(isEditing ? "Não foi possível atualizar a despesa. Tente novamente." : "Não foi possível salvar a despesa. Tente novamente.");
     } finally {
@@ -498,7 +466,7 @@ function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: Ex
     }
   };
 
-  return <Modal title={isEditing ? "Editar despesa" : "Nova despesa"} subtitle={isEditing ? "Atualize os dados da despesa selecionada." : "Registre os custos fixos e variáveis do consultório."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Categoria"><select value={category} onChange={(event) => setCategory(event.target.value)} className="input-finance">{Object.entries(expenseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Ex.: Uber para atendimento" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Tipo"><select value={recurrence} onChange={(event) => setRecurrence(event.target.value as "fixed" | "variable")} className="input-finance"><option value="fixed">Fixa</option><option value="variable">Variável</option></select></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi paga</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !description.trim() || !amount}>{saving ? (isEditing ? "Salvando alterações..." : "Salvando...") : (isEditing ? "Salvar alterações" : "Salvar despesa")}</Button></div></div></Modal>;
+  return <Modal title={isEditing ? "Editar despesa" : "Nova despesa"} subtitle={isEditing ? "Atualize os dados da despesa selecionada." : "Registre custos variáveis ou uma despesa fixa mensal."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-destructive/15 bg-destructive/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Despesa / saída</div><FieldLabel label="Categoria"><select value={category} onChange={(event) => setCategory(event.target.value)} className="input-finance">{Object.entries(expenseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Ex.: Aluguel do consultório" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label={recurrence === "fixed" ? "Mês inicial" : "Competência"}><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Tipo"><select value={recurrence} onChange={(event) => setRecurrence(event.target.value as "fixed" | "variable")} className="input-finance"><option value="variable">Variável / avulsa</option><option value="fixed">Fixa mensal</option></select></FieldLabel>{recurrence === "fixed" && <FieldLabel label="Dia fixo todo mês"><input type="number" min={1} max={28} value={fixedDay} onChange={(event) => setFixedDay(Number(event.target.value))} className="input-finance" /></FieldLabel>} {recurrence === "fixed" && <div className="rounded-xl border border-border bg-background/45 p-3 text-[10px] leading-4 text-muted-foreground sm:col-span-2">O sistema criará esta despesa automaticamente nos próximos meses com o mesmo valor e vencimento no dia {fixedDay || "—"}.</div>}<label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "fixed" ? "A despesa deste primeiro mês já foi paga" : "Já foi paga"}</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !description.trim() || !amount}>{saving ? (isEditing ? "Salvando alterações..." : "Salvando...") : (isEditing ? "Salvar alterações" : "Salvar despesa")}</Button></div></div></Modal>;
 }
 
 function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBilling; onClose: () => void; onSave: (patient: PatientBilling) => Promise<void> }) {
@@ -510,7 +478,7 @@ function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBil
     setError("");
     try { await onSave(draft); } catch { setError("Não foi possível salvar a regra de cobrança."); } finally { setSaving(false); }
   };
-  return <Modal title="Regra de cobrança" subtitle={patient.full_name} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Modelo de cobrança"><select value={draft.billing_model} onChange={(event) => setDraft((current) => ({ ...current, billing_model: event.target.value as "session" | "package" }))} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote mensal</option></select></FieldLabel>{draft.billing_model === "package" && <><FieldLabel label="Quando cobrar"><select value={draft.package_timing ?? "current_month"} onChange={(event) => setDraft((current) => ({ ...current, package_timing: event.target.value as "current_month" | "next_month" }))} className="input-finance"><option value="current_month">Início do próprio mês</option><option value="next_month">Início do mês seguinte</option></select></FieldLabel><FieldLabel label="Dia da cobrança"><input type="number" min={1} max={28} value={draft.billing_day ?? 5} onChange={(event) => setDraft((current) => ({ ...current, billing_day: Number(event.target.value) }))} className="input-finance" /></FieldLabel><FieldLabel label="Valor do pacote"><input inputMode="decimal" value={draft.package_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" /></FieldLabel></>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</Button></div></div></Modal>;
+  return <Modal title="Regra de cobrança" subtitle={patient.full_name} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Modelo de cobrança"><select value={draft.billing_model} onChange={(event) => setDraft((current) => ({ ...current, billing_model: event.target.value as "session" | "package" }))} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote mensal</option></select></FieldLabel>{draft.billing_model === "session" && <FieldLabel label="Valor padrão da sessão"><input inputMode="decimal" value={draft.session_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, session_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" placeholder="0,00" /></FieldLabel>}{draft.billing_model === "package" && <><FieldLabel label="Quando cobrar"><select value={draft.package_timing ?? "current_month"} onChange={(event) => setDraft((current) => ({ ...current, package_timing: event.target.value as "current_month" | "next_month" }))} className="input-finance"><option value="current_month">Início do próprio mês</option><option value="next_month">Início do mês seguinte</option></select></FieldLabel><FieldLabel label="Dia da cobrança"><input type="number" min={1} max={28} value={draft.billing_day ?? 5} onChange={(event) => setDraft((current) => ({ ...current, billing_day: Number(event.target.value) }))} className="input-finance" /></FieldLabel><FieldLabel label="Valor do pacote"><input inputMode="decimal" value={draft.package_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" /></FieldLabel></>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</Button></div></div></Modal>;
 }
 
 function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
