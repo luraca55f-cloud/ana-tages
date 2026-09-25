@@ -766,7 +766,8 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   const [error, setError] = useState("");
 
   const nextSuggestedSlot = () => {
-    const base = futureSlots.length > 0 && futureSlots[futureSlots.length - 1]?.when ? new Date(futureSlots[futureSlots.length - 1].when) : new Date();
+    const lastWhen = futureSlots.at(-1)?.when;
+    const base = lastWhen ? new Date(lastWhen) : new Date();
     const next = new Date(base);
     next.setDate(next.getDate() + 7);
     next.setHours(9, 0, 0, 0);

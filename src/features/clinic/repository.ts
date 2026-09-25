@@ -187,7 +187,7 @@ export async function markAppointmentPaid(appointmentId: string) {
   if (error) throw error;
 }
 
-export async function createAppointment(input: Omit<AppointmentRow, "id" | "created_at">, clientRequestId = crypto.randomUUID()) {
+export async function createAppointment(input: Omit<AppointmentRow, "id" | "created_at">, clientRequestId: string = crypto.randomUUID()) {
   const client = requireSupabase();
   const payload = {
     client_request_id: clientRequestId,
