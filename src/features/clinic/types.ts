@@ -5,6 +5,7 @@ export type PatientRow = {
   email: string | null;
   active: boolean;
   billing_model: "session" | "package";
+  session_amount: number | null;
   package_amount: number | null;
   package_timing: "current_month" | "next_month" | null;
   billing_day: number | null;
@@ -36,6 +37,16 @@ export type AppointmentRow = {
   amount: number;
   notes_admin: string | null;
   created_at: string;
+};
+
+
+export type AppointmentPaymentRow = {
+  id: string;
+  appointment_id: string;
+  status: "pending" | "partial" | "paid" | "cancelled";
+  amount: number;
+  received_amount: number;
+  received_at: string | null;
 };
 
 export type MaterialRow = {

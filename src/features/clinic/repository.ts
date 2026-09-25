@@ -1,6 +1,7 @@
 import { supabase } from "../../lib/supabase";
 import type {
   AppSettingsRow,
+  AppointmentPaymentRow,
   AppointmentRow,
   ClinicalNoteRow,
   MaterialRow,
@@ -58,7 +59,7 @@ export async function listPatients() {
   const client = requireSupabase();
   const { data, error } = await client
     .from("patients")
-    .select("id,full_name,phone,email,active,billing_model,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at")
+    .select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at")
     .is("archived_at", null)
     .order("full_name")
     .limit(MAX_ROWS);
@@ -78,14 +79,15 @@ export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow
     email: cleanText(input.email, 254),
     active: input.active ?? true,
     billing_model: billingModel,
+    session_amount: billingModel === "session" && input.session_amount != null ? safeMoney(input.session_amount) : null,
     package_amount: billingModel === "package" ? safeMoney(input.package_amount) : null,
     package_timing: billingModel === "package" ? (input.package_timing ?? "current_month") : null,
     billing_day: billingModel === "package" ? Math.max(1, Math.min(28, Number(input.billing_day ?? 5))) : null,
     notes_admin: cleanText(input.notes_admin, 4000),
-  }).select("id,full_name,phone,email,active,billing_model,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
+  }).select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
   if (error) {
     if ((error as { code?: string }).code === "23505") {
-      const existing = await client.from("patients").select("id,full_name,phone,email,active,billing_model,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").eq("client_request_id", clientRequestId).maybeSingle();
+      const existing = await client.from("patients").select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").eq("client_request_id", clientRequestId).maybeSingle();
       if (!existing.error && existing.data) return existing.data as PatientRow;
     }
     throw error;
@@ -101,11 +103,12 @@ export async function updatePatient(id: string, patch: Partial<PatientRow>) {
   if (patch.email !== undefined) allowed["email"] = cleanText(patch.email, 254);
   if (patch.active !== undefined) allowed["active"] = Boolean(patch.active);
   if (patch.billing_model !== undefined) allowed["billing_model"] = patch.billing_model === "package" ? "package" : "session";
+  if (patch.session_amount !== undefined) allowed["session_amount"] = patch.session_amount == null ? null : safeMoney(patch.session_amount);
   if (patch.package_amount !== undefined) allowed["package_amount"] = patch.package_amount == null ? null : safeMoney(patch.package_amount);
   if (patch.package_timing !== undefined) allowed["package_timing"] = patch.package_timing;
   if (patch.billing_day !== undefined) allowed["billing_day"] = patch.billing_day == null ? null : Math.max(1, Math.min(28, Number(patch.billing_day)));
   if (patch.notes_admin !== undefined) allowed["notes_admin"] = cleanText(patch.notes_admin, 4000);
-  const { data, error } = await client.from("patients").update(allowed).eq("id", id).is("archived_at", null).select("id,full_name,phone,email,active,billing_model,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
+  const { data, error } = await client.from("patients").update(allowed).eq("id", id).is("archived_at", null).select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
   if (error) throw error;
   return data as PatientRow;
 }
@@ -140,6 +143,48 @@ export async function listAllAppointments() {
     if (batch.length < pageSize) break;
   }
   return rows;
+}
+
+export async function listAppointmentPayments(appointmentIds: string[]) {
+  const client = requireSupabase();
+  if (appointmentIds.length === 0) return [] as AppointmentPaymentRow[];
+  const ensure = await client.rpc("ensure_appointment_billings");
+  if (ensure.error) throw ensure.error;
+  const uniqueIds = Array.from(new Set(appointmentIds));
+  const rows: AppointmentPaymentRow[] = [];
+  const chunkSize = 200;
+  for (let index = 0; index < uniqueIds.length; index += chunkSize) {
+    const ids = uniqueIds.slice(index, index + chunkSize);
+    const { data, error } = await client
+      .from("billing_entries")
+      .select("id,appointment_id,status,amount,received_amount,received_at")
+      .in("appointment_id", ids)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    rows.push(...((data ?? []).filter((item) => item.appointment_id) as AppointmentPaymentRow[]));
+  }
+  return rows;
+}
+
+export async function getAppointmentPayment(appointmentId: string) {
+  const client = requireSupabase();
+  const ensure = await client.rpc("ensure_appointment_billings");
+  if (ensure.error) throw ensure.error;
+  const { data, error } = await client
+    .from("billing_entries")
+    .select("id,appointment_id,status,amount,received_amount,received_at")
+    .eq("appointment_id", appointmentId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as AppointmentPaymentRow | null;
+}
+
+export async function markAppointmentPaid(appointmentId: string) {
+  const client = requireSupabase();
+  const { error } = await client.rpc("mark_appointment_paid", { p_appointment_id: appointmentId });
+  if (error) throw error;
 }
 
 export async function createAppointment(input: Omit<AppointmentRow, "id" | "created_at">, clientRequestId = crypto.randomUUID()) {
@@ -353,6 +398,8 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
 
 export async function loadReports(startDate: string, endExclusive: string): Promise<ReportsBundle> {
   const client = requireSupabase();
+  const ensureFixed = await client.rpc("ensure_fixed_expenses", { p_month: startDate });
+  if (ensureFixed.error) throw ensureFixed.error;
   const startTs = `${startDate}T00:00:00`;
   const endTs = `${endExclusive}T00:00:00`;
   const [appointmentsResult, billingResult, receivedResult, receivablesResult, expensesResult] = await Promise.all([
@@ -375,11 +422,14 @@ export async function loadReports(startDate: string, endExclusive: string): Prom
 
 export async function loadFinanceHistory(startDate: string, endExclusive: string) {
   const client = requireSupabase();
-  const [billingResult, expenseResult] = await Promise.all([
+  const ensureFixed = await client.rpc("ensure_fixed_expenses_range", { p_start: startDate, p_end_exclusive: endExclusive });
+  if (ensureFixed.error) throw ensureFixed.error;
+  const [billingResult, receivedResult, expenseResult] = await Promise.all([
     client.from("billing_entries").select("competence_date,amount,status").gte("competence_date", startDate).lt("competence_date", endExclusive).neq("status", "cancelled").limit(MAX_ROWS),
+    client.from("billing_entries").select("received_at,received_amount").gte("received_at", startDate).lt("received_at", endExclusive).gt("received_amount", 0).limit(MAX_ROWS),
     client.from("expenses").select("competence_date,amount").gte("competence_date", startDate).lt("competence_date", endExclusive).limit(MAX_ROWS),
   ]);
-  const error = billingResult.error ?? expenseResult.error;
+  const error = billingResult.error ?? receivedResult.error ?? expenseResult.error;
   if (error) throw error;
-  return { billings: billingResult.data ?? [], expenses: expenseResult.data ?? [] };
+  return { billings: billingResult.data ?? [], received: receivedResult.data ?? [], expenses: expenseResult.data ?? [] };
 }

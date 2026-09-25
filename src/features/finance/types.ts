@@ -26,12 +26,14 @@ export type ExpenseEntry = {
   recurrence: ExpenseRecurrence;
   status: "pending" | "paid";
   paid_at: string | null;
+  fixed_rule_id?: string | null;
 };
 
 export type PatientBilling = {
   id: string;
   full_name: string;
   billing_model: "session" | "package";
+  session_amount: number | null;
   package_amount: number | null;
   package_timing: "current_month" | "next_month" | null;
   billing_day: number | null;
