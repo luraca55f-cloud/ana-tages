@@ -246,6 +246,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
       date: entry.received_at ?? entry.competence_date,
       amount: Number(entry.received_amount),
       billingEntry: entry,
+      expenseEntry: null,
     }));
     const expenses = data.expenses.map((entry) => ({
       key: `expense-${entry.id}`,
@@ -257,6 +258,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
       status: entry.status === "paid" ? "Paga" : "Pendente",
       amount: Number(entry.amount),
       billingEntry: null,
+      expenseEntry: entry,
     }));
 
     // Mantém todas as movimentações ordenadas antes do filtro para que "Entradas" e
@@ -481,6 +483,13 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
                             <>
                               <Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry.billingEntry!)}><Pencil /> Editar recebimento</Button>
                               <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeReceipt(entry.billingEntry!)}><Trash2 /> Excluir recebimento</Button>
+                            </>
+                          ) : entry.type === "expense" && entry.expenseEntry ? (
+                            <>
+                              {/* Ações também ficam disponíveis na visão geral para corrigir uma saída sem obrigar o usuário a trocar de aba.
+                                  A lógica reutiliza os mesmos fluxos seguros da aba Despesas; não concede UPDATE/DELETE direto no frontend. */}
+                              <Button size="sm" variant="quiet" onClick={() => startExpenseEdit(entry.expenseEntry!)}><Pencil /> Editar despesa</Button>
+                              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeExpense(entry.expenseEntry!)}><Trash2 /> Excluir despesa</Button>
                             </>
                           ) : <span className="text-xs text-muted-foreground">—</span>}
                         </div>

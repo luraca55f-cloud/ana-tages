@@ -115,3 +115,11 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Banco:** usar apenas o SQL incremental `SQL_ATUALIZACAO_ANA_TAGES_v2.0.10.sql`. Não reexecutar a migration inicial.
 - **Texto profissional:** na seção “Despesas sobre o faturamento”, usar “Participação percentual de cada categoria de despesa em relação ao faturamento do período selecionado.”
 - Manter os comentários dessa regra sincronizados caso o fluxo financeiro seja alterado futuramente.
+
+## Atualização v2.0.11 — edição e exclusão de despesas na visão geral
+
+- **Movimentações recentes:** saídas/despesas devem oferecer `Editar despesa` e `Excluir despesa` diretamente na coluna Ações, assim como os recebimentos já possuem ações próprias.
+- **Reutilizar fluxo existente:** essas ações chamam `startExpenseEdit()` e `removeExpense()`, os mesmos fluxos usados na aba Despesas. Não duplicar lógica de persistência e não conceder UPDATE/DELETE direto ao frontend.
+- **Rastreabilidade:** edição e exclusão continuam passando pelas RPCs seguras já existentes (`update_expense` / `delete_expense`) e pela auditoria do banco.
+- **UX:** manter os botões discretos; `Editar despesa` neutro e `Excluir despesa` com destaque destrutivo moderado, sem poluir a tabela.
+- **Banco:** esta versão não altera schema nem RPCs. SQL adicional: NÃO.
