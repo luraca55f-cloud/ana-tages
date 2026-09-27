@@ -1,4 +1,4 @@
-ANA TAGES v2.0.12 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.13 — RELATÓRIO DE VALIDAÇÃO
 
 Base:
 - ANA TAGES v2.0.11 limpa.
@@ -10,10 +10,15 @@ Alteração:
 - Falha de recebimento após salvar o atendimento é diferenciada de falha do cadastro.
 
 SQL:
-- NÃO. A v2.0.12 não exige alteração no Supabase.
+- NÃO. A v2.0.13 não exige alteração no Supabase.
 
 Validações executadas:
 - verify-project.mjs
 - busca por marcadores de conflito Git
 - busca por pasta GIT duplicada
 - checagem sintática TypeScript/TSX quando disponível no ambiente
+
+Favicon e título:
+- favicon.ico substituído pela identidade visual fornecida;
+- favicon.png adicionado para navegadores modernos;
+- título da aba: TAGES | Consultório Anna.

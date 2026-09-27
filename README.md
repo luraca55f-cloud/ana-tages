@@ -1,4 +1,4 @@
-# TAGES CONSULTORIA ANNA — v2.0.12
+# TAGES CONSULTORIA ANNA — v2.0.13
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 
@@ -55,7 +55,7 @@ Em uma instalação **nova e vazia**, execute uma única vez:
 
 `supabase/migrations/202609220001_initial_schema.sql`
 
-Em produção já existente, **não reexecute a migration inicial**. Atualizações posteriores devem usar apenas o SQL incremental explicitamente indicado na versão correspondente. A v2.0.12 não exige SQL adicional.
+Em produção já existente, **não reexecute a migration inicial**. Atualizações posteriores devem usar apenas o SQL incremental explicitamente indicado na versão correspondente. A v2.0.13 não exige SQL adicional.
 
 Essa é a migração corrigida após o erro PostgreSQL `42P17` ocorrido na implantação anterior.
 
@@ -97,3 +97,11 @@ Faça depois do primeiro deploy:
 ## Para manutenção por outra IA
 
 Leia `AI_MAINTENANCE_NOTES.md` antes de alterar dependências, deploy, imports ou migração do banco.
+
+
+## Atualização v2.0.13 — identidade da aba do navegador
+
+- Favicon atualizado com a identidade visual fornecida para o TAGES.
+- Título da aba alterado para `TAGES | Consultório Anna`.
+- O favicon usa versionamento na URL para evitar que navegadores mantenham o ícone anterior em cache.
+- SQL adicional: NÃO.

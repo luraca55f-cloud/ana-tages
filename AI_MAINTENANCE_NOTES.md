@@ -131,3 +131,11 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Etapas separadas:** se o atendimento já foi salvo e apenas a baixa financeira falhar, a interface deve dizer explicitamente que o atendimento foi salvo e que somente o recebimento falhou. Não apresentar isso como falha total do cadastro.
 - **Segurança:** detalhes técnicos brutos do Supabase/PostgreSQL continuam apenas no `console.error`; não expor nomes internos de constraints/RPCs ao usuário.
 - **Banco:** esta versão não altera schema, políticas nem RPCs. SQL adicional: NÃO.
+
+
+## Atualização v2.0.13 — favicon e título da aba
+
+- **Título da aba:** manter `TAGES | Consultório Anna` em `src/routes/__root.tsx`.
+- **Favicon oficial:** `public/favicon.ico` e `public/favicon.png` derivam do símbolo fornecido pelo usuário nesta versão. Não substituir por favicon genérico sem solicitação.
+- **Cache:** os links do favicon usam `?v=2.0.13`; ao trocar novamente o ícone, incrementar o identificador de cache.
+- **Banco:** esta alteração é somente de interface/metadados. SQL adicional: NÃO.
