@@ -36,3 +36,6 @@ package-lock.json
 *.njsproj
 *.sln
 *.sw?
+# Legacy duplicate source folder
+# Never commit a top-level GIT/ directory; the application source of truth is /src.
+/GIT/
