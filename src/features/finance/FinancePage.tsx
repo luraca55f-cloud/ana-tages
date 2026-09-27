@@ -20,7 +20,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { createExpense, createRevenue, deleteExpense, generatePackageBillingsForMonth, loadFinanceBundle, markExpensePaid, markRevenuePaid, updateExpense, updatePatientBilling } from "./repository";
+import { createExpense, createRevenue, deleteExpense, deleteRevenueReceipt, generatePackageBillingsForMonth, loadFinanceBundle, markExpensePaid, markRevenuePaid, updateExpense, updatePatientBilling, updateRevenueReceipt } from "./repository";
 import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, RevenueSource } from "./types";
 
 const sourceLabels: Record<RevenueSource, string> = {
@@ -175,6 +175,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
   const [error, setError] = useState("");
   const [modal, setModal] = useState<"revenue" | "expense" | null>(null);
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
+  const [editingReceipt, setEditingReceipt] = useState<BillingEntry | null>(null);
   const [editingPatient, setEditingPatient] = useState<PatientBilling | null>(null);
   const [tab, setTab] = useState<"overview" | "receivables" | "expenses" | "billing">("overview");
   const [movementFilter, setMovementFilter] = useState<"all" | "revenue" | "expense">("all");
@@ -232,15 +233,19 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
   }, [data.expenses]);
 
   const latestMovements = useMemo(() => {
-    const revenues = data.billed.map((entry) => ({
+    // "Movimentações" deve refletir caixa: entradas vêm das baixas efetivamente recebidas
+    // no período, não de todo o faturamento. Isso também garante que um recebimento cuja
+    // data seja corrigida passe a aparecer no mês correto.
+    const revenues = data.receivedInPeriod.map((entry) => ({
       key: `revenue-${entry.id}`,
-      date: entry.competence_date,
       type: "revenue" as const,
       title: entry.client_name,
       description: entry.description,
       origin: sourceLabels[entry.source_type],
       status: entry.status === "paid" ? "Recebido" : entry.status === "partial" ? "Parcial" : entry.status === "cancelled" ? "Cancelado" : "A receber",
-      amount: Number(entry.amount),
+      date: entry.received_at ?? entry.competence_date,
+      amount: Number(entry.received_amount),
+      billingEntry: entry,
     }));
     const expenses = data.expenses.map((entry) => ({
       key: `expense-${entry.id}`,
@@ -251,13 +256,14 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
       origin: entry.recurrence === "fixed" ? "Despesa fixa" : "Despesa variável",
       status: entry.status === "paid" ? "Paga" : "Pendente",
       amount: Number(entry.amount),
+      billingEntry: null,
     }));
 
     // Mantém todas as movimentações ordenadas antes do filtro para que "Entradas" e
     // "Saídas" possam trazer as 12 mais recentes do próprio tipo, inclusive as mais antigas
     // que ficariam ocultas se o corte fosse feito antes da filtragem.
     return [...revenues, ...expenses].sort((a, b) => b.date.localeCompare(a.date));
-  }, [data.billed, data.expenses]);
+  }, [data.receivedInPeriod, data.expenses]);
 
   const visibleMovements = useMemo(
     () => latestMovements.filter((entry) => movementFilter === "all" || entry.type === movementFilter).slice(0, 12),
@@ -309,6 +315,30 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
       await reload();
     } catch {
       setError("Não foi possível baixar este recebimento.");
+    }
+  };
+
+  // Recebimento e cobrança são conceitos diferentes: editar/excluir uma baixa não deve
+  // apagar o faturamento que originou a cobrança (sessão, pacote ou receita manual).
+  const saveReceipt = async (input: { id: string; received_amount: number; received_at: string }) => {
+    if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
+    await updateRevenueReceipt(input);
+    await reload();
+    setEditingReceipt(null);
+  };
+
+  const removeReceipt = async (entry: BillingEntry) => {
+    if (!isSupabaseConfigured || Number(entry.received_amount || 0) <= 0) return;
+    const confirmed = window.confirm(
+      `Excluir o recebimento de ${money(Number(entry.received_amount))} de ${entry.client_name}? A cobrança continuará registrada e voltará para A receber.`,
+    );
+    if (!confirmed) return;
+    setError("");
+    try {
+      await deleteRevenueReceipt(entry.id);
+      await reload();
+    } catch {
+      setError("Não foi possível excluir este recebimento.");
     }
   };
 
@@ -419,7 +449,48 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
                 <MovementFilterButton active={movementFilter === "expense"} onClick={() => setMovementFilter("expense")}>Saídas</MovementFilterButton>
               </div>
             </div>
-            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Lançamento</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th></tr></thead><tbody>{visibleMovements.map((entry) => <tr key={entry.key} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.date)}</td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${entry.type === "expense" ? "bg-red-500/10 text-red-700" : "bg-emerald-500/10 text-emerald-700"}`}>{entry.type === "expense" ? "Saída" : "Entrada"}</span></td><td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td><td className="px-3 py-4 text-xs">{entry.origin}</td><td className="px-3 py-4 text-xs">{entry.status}</td><td className={`px-3 py-4 text-right text-xs font-semibold ${entry.type === "expense" ? "text-red-700" : "text-emerald-700"}`}>{entry.type === "expense" ? `- ${money(entry.amount)}` : money(entry.amount)}</td></tr>)}</tbody></table>{visibleMovements.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma movimentação encontrada neste filtro.</p>}</div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[1080px] text-left">
+                <thead>
+                  <tr className="border-b border-border text-[10px] uppercase text-muted-foreground">
+                    <th className="px-3 py-3 font-medium">Data</th>
+                    <th className="px-3 py-3 font-medium">Tipo</th>
+                    <th className="px-3 py-3 font-medium">Lançamento</th>
+                    <th className="px-3 py-3 font-medium">Origem</th>
+                    <th className="px-3 py-3 font-medium">Status</th>
+                    <th className="px-3 py-3 text-right font-medium">Valor</th>
+                    <th className="px-3 py-3 text-right font-medium">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleMovements.map((entry) => (
+                    <tr key={entry.key} className="border-b border-border/70 last:border-0">
+                      <td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.date)}</td>
+                      <td className="px-3 py-4">
+                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${entry.type === "expense" ? "bg-red-500/10 text-red-700" : "bg-emerald-500/10 text-emerald-700"}`}>
+                          {entry.type === "expense" ? "Saída" : "Entrada"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td>
+                      <td className="px-3 py-4 text-xs">{entry.origin}</td>
+                      <td className="px-3 py-4 text-xs">{entry.status}</td>
+                      <td className={`px-3 py-4 text-right text-xs font-semibold ${entry.type === "expense" ? "text-red-700" : "text-emerald-700"}`}>{entry.type === "expense" ? `- ${money(entry.amount)}` : money(entry.amount)}</td>
+                      <td className="px-3 py-4">
+                        <div className="flex justify-end gap-1.5">
+                          {entry.type === "revenue" && entry.billingEntry && Number(entry.billingEntry.received_amount || 0) > 0 ? (
+                            <>
+                              <Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry.billingEntry!)}><Pencil /> Editar recebimento</Button>
+                              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeReceipt(entry.billingEntry!)}><Trash2 /> Excluir recebimento</Button>
+                            </>
+                          ) : <span className="text-xs text-muted-foreground">—</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {visibleMovements.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma movimentação encontrada neste filtro.</p>}
+            </div>
           </section>
         </div>
       )}
@@ -437,7 +508,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
             <div><h2 className="font-display text-lg">Despesas do período</h2><p className="mt-1 text-[11px] text-muted-foreground">Fixas e variáveis, incluindo transporte, contador/INSS, aluguel, condomínio, faxina e internet.</p></div>
             <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[940px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Categoria</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th><th className="px-3 py-3 text-right font-medium">Ações</th></tr></thead><tbody>{data.expenses.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.description}</td><td className="px-3 py-4 text-xs">{expenseLabels[entry.category] ?? entry.category}</td><td className="px-3 py-4 text-xs">{entry.recurrence === "fixed" ? `Fixa • dia ${Number((entry.due_date ?? entry.competence_date).slice(8, 10))}` : "Variável"}</td><td className="px-3 py-4 text-xs">{entry.status === "paid" ? "Paga" : "Pendente"}</td><td className="px-3 py-4 text-right text-xs font-semibold">{money(entry.amount)}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => startExpenseEdit(entry)}><Pencil /> Editar</Button>{entry.status === "pending" && <Button size="sm" variant="quiet" onClick={() => void payExpense(entry)}><Check /> Marcar paga</Button>}<Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeExpense(entry)}><Trash2 /> Excluir</Button></div></td></tr>)}</tbody></table>{data.expenses.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma despesa lançada neste período.</p>}</div>
           </section>
-          <section className="dashboard-card rounded-2xl p-5"><h2 className="font-display text-base">Despesas sobre o faturamento</h2><p className="mt-1 text-[10px] leading-4 text-muted-foreground">Percentual de cada categoria em relação ao faturamento do mês, como solicitado.</p><div className="mt-4 space-y-4">{expenseBreakdown.map(([category, value]) => { const percent = summary.billed > 0 ? (value / summary.billed) * 100 : 0; return <div key={category}><div className="flex justify-between gap-3 text-xs"><span>{expenseLabels[category] ?? category}</span><strong>{money(value)} • {percent.toFixed(1).replace(".", ",")}%</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, percent)}%` }} /></div></div>; })}</div><div className="mt-6 border-t border-border pt-4"><p className="text-[10px] text-muted-foreground">Despesas / faturamento</p><p className="mt-1 font-display text-2xl">{summary.expenseVsBilled.toFixed(1).replace(".", ",")}%</p><p className="mt-1 text-[10px] text-muted-foreground">{money(summary.expenses)} de {money(summary.billed)} faturados</p></div></section>
+          <section className="dashboard-card rounded-2xl p-5"><h2 className="font-display text-base">Despesas sobre o faturamento</h2><p className="mt-1 text-[10px] leading-4 text-muted-foreground">Participação percentual de cada categoria de despesa em relação ao faturamento do período selecionado.</p><div className="mt-4 space-y-4">{expenseBreakdown.map(([category, value]) => { const percent = summary.billed > 0 ? (value / summary.billed) * 100 : 0; return <div key={category}><div className="flex justify-between gap-3 text-xs"><span>{expenseLabels[category] ?? category}</span><strong>{money(value)} • {percent.toFixed(1).replace(".", ",")}%</strong></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, percent)}%` }} /></div></div>; })}</div><div className="mt-6 border-t border-border pt-4"><p className="text-[10px] text-muted-foreground">Despesas / faturamento</p><p className="mt-1 font-display text-2xl">{summary.expenseVsBilled.toFixed(1).replace(".", ",")}%</p><p className="mt-1 text-[10px] text-muted-foreground">{money(summary.expenses)} de {money(summary.billed)} faturados</p></div></section>
         </div>
       )}
 
@@ -450,6 +521,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
 
       {modal === "revenue" && <RevenueModal onClose={() => setModal(null)} onSave={async (entry, requestId) => { await saveRevenue(entry, requestId); setModal(null); }} />}
       {modal === "expense" && <ExpenseModal initialExpense={editingExpense} onClose={() => { setEditingExpense(null); setModal(null); }} onSave={async (entry, requestId) => { await saveExpense(entry, requestId); setEditingExpense(null); setModal(null); }} />}
+      {editingReceipt && <ReceiptModal entry={editingReceipt} onClose={() => setEditingReceipt(null)} onSave={saveReceipt} />}
       {editingPatient && <PatientBillingModal patient={editingPatient} onClose={() => setEditingPatient(null)} onSave={savePatientBilling} />}
     </>
   );
@@ -504,6 +576,63 @@ function RevenueModal({ onClose, onSave }: { onClose: () => void; onSave: (entry
   };
 
   return <Modal title="Nova receita" subtitle="Registre entradas de atendimentos, pacotes, empresas, testes e outros serviços." onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Receita / entrada</div><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : "Salvar receita"}</Button></div></div></Modal>;
+}
+
+function ReceiptModal({ entry, onClose, onSave }: { entry: BillingEntry; onClose: () => void; onSave: (input: { id: string; received_amount: number; received_at: string }) => Promise<void> }) {
+  const [amount, setAmount] = useState(String(entry.received_amount || entry.amount).replace(".", ","));
+  const [receivedAt, setReceivedAt] = useState(entry.received_at ?? isoToday());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    const numeric = Number(amount.replace(",", "."));
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      setError("Informe um valor recebido válido.");
+      return;
+    }
+    if (numeric > Number(entry.amount)) {
+      setError(`O recebimento não pode ser maior que o valor faturado (${money(Number(entry.amount))}).`);
+      return;
+    }
+    if (!receivedAt) {
+      setError("Informe a data do recebimento.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await onSave({ id: entry.id, received_amount: numeric, received_at: receivedAt });
+    } catch {
+      setError("Não foi possível atualizar o recebimento. Tente novamente.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Editar recebimento" subtitle="Corrija a baixa financeira sem alterar a cobrança que a originou." onClose={onClose}>
+      <div className="grid gap-4 p-5 sm:grid-cols-2">
+        <div className="rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2">
+          <p className="font-medium">{entry.client_name}</p>
+          <p className="mt-1 text-muted-foreground">Faturado: {money(Number(entry.amount))} • {sourceLabels[entry.source_type]}</p>
+        </div>
+        <FieldLabel label="Valor recebido">
+          <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" />
+        </FieldLabel>
+        <FieldLabel label="Data do recebimento">
+          <input type="date" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} className="input-finance" />
+        </FieldLabel>
+        <p className="text-[10px] leading-4 text-muted-foreground sm:col-span-2">
+          Esta edição altera somente o recebimento. O valor faturado e o vínculo com sessão, pacote ou serviço permanecem preservados.
+        </p>
+        {error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}
+        <div className="flex justify-end gap-2 pt-2 sm:col-span-2">
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button variant="dashboard" onClick={() => void submit()} disabled={saving}>{saving ? "Salvando..." : "Salvar alteração"}</Button>
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
 function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: ExpenseEntry | null; onClose: () => void; onSave: (entry: Omit<ExpenseEntry, "id" | "paid_at">, requestId: string) => Promise<void> }) {

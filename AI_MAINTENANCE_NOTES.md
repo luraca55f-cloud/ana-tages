@@ -105,3 +105,13 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Cloudflare:** `wrangler.jsonc` replica a observabilidade configurada no painel: logs e invocation logs ligados/persistidos e traces desligados.
 - **Estrutura Git:** a pasta legada `GIT/` é duplicação e não deve existir nem ser versionada; a fonte oficial é `/src`.
 - Sempre atualizar estes comentários quando mudar uma dessas regras.
+
+## Atualização v2.0.10 — correção de recebimentos
+
+- **Regra central:** cobrança/faturamento e recebimento são coisas diferentes. Nunca apague a `billing_entry` apenas porque uma baixa foi registrada incorretamente.
+- **Editar recebimento:** altera somente `received_amount` e `received_at`; o status vira `paid` quando o valor recebido é igual ao faturado e `partial` quando é menor.
+- **Excluir recebimento:** significa desfazer a baixa, zerando `received_amount`, limpando `received_at` e devolvendo a cobrança para `pending` / A receber. O vínculo com sessão, pacote, paciente ou serviço deve permanecer intacto.
+- **Movimentações recentes:** entradas devem vir de `receivedInPeriod`, pois a seção representa fluxo de caixa real. Isso permite que uma correção da data de recebimento mova a entrada para o mês correto.
+- **Banco:** usar apenas o SQL incremental `SQL_ATUALIZACAO_ANA_TAGES_v2.0.10.sql`. Não reexecutar a migration inicial.
+- **Texto profissional:** na seção “Despesas sobre o faturamento”, usar “Participação percentual de cada categoria de despesa em relação ao faturamento do período selecionado.”
+- Manter os comentários dessa regra sincronizados caso o fluxo financeiro seja alterado futuramente.

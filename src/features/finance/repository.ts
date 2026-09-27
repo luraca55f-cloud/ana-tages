@@ -162,6 +162,27 @@ export async function markRevenuePaid(id: string, _amount?: number) {
   if (error) throw error;
 }
 
+// A baixa financeira é editável sem alterar ou excluir a cobrança original.
+// Isso permite corrigir valor/data de um recebimento lançado incorretamente e preserva
+// vínculos automáticos com sessão, pacote, paciente ou serviço.
+export async function updateRevenueReceipt(input: { id: string; received_amount: number; received_at: string }) {
+  if (!supabase) throw new Error("Supabase não configurado");
+  const { error } = await supabase.rpc("update_billing_receipt", {
+    p_id: input.id,
+    p_received_amount: cleanMoney(input.received_amount),
+    p_received_at: input.received_at,
+  });
+  if (error) throw error;
+}
+
+// "Excluir recebimento" significa desfazer a baixa e devolver a cobrança para A receber.
+// Nunca remove a billing_entry, evitando perda de rastreabilidade financeira.
+export async function deleteRevenueReceipt(id: string) {
+  if (!supabase) throw new Error("Supabase não configurado");
+  const { error } = await supabase.rpc("delete_billing_receipt", { p_id: id });
+  if (error) throw error;
+}
+
 export async function updatePatientBilling(input: PatientBilling) {
   if (!supabase) throw new Error("Supabase não configurado");
   const model = input.billing_model === "package" ? "package" : "session";

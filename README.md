@@ -1,4 +1,4 @@
-# TAGES CONSULTORIA ANNA — v2.0.8
+# TAGES CONSULTORIA ANNA — v2.0.10
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 

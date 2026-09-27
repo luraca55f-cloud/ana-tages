@@ -1,30 +1,28 @@
-ANA TAGES v2.0.8 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.10 — RELATÓRIO DE VALIDAÇÃO
 Data: 26/09/2026
 
 Base utilizada
-- Base estável restaurada a partir do ZIP original confirmado pelo usuário.
-- A pasta duplicada legada GIT/ foi removida e bloqueada no .gitignore.
+- ANA TAGES v2.0.8 limpa, já com correções de Dashboard/F5, filtros de movimentações e observabilidade.
+- Sem pasta duplicada GIT/.
 
 Alterações incluídas
-- Dashboard: durante F5/carregamento, cards financeiros usam skeleton e não exibem R$ 0,00 falso.
-- Dashboard: agenda e resumo mensal também deixam de exibir zeros/"nenhum" falsos durante o carregamento principal.
-- Dashboard: falha de consulta passa a ser indicada explicitamente em vez de ser apresentada como dado zerado.
-- Resultado financeiro: rótulo dinâmico Lucro no mês / Prejuízo no mês / Resultado do mês.
-- Financeiro: seletor de mês abre ao clicar em qualquer área do campo quando o navegador oferece showPicker().
-- Movimentações recentes: filtro Todas / Entradas / Saídas.
-- Movimentações recentes: Entrada em verde suave e Saída em vermelho suave, sem destaque espalhafatoso.
-- Cloudflare: wrangler.jsonc sincronizado com logs/invocation logs persistidos e traces desabilitados.
+- Financeiro: recebimentos já registrados podem ser editados (valor recebido e data).
+- Financeiro: recebimentos podem ser excluídos sem apagar a cobrança; a baixa é desfeita e a cobrança retorna para A receber.
+- Financeiro: Movimentações recentes usa recebimentos efetivos do período como entradas de caixa.
+- Financeiro: ações discretas Editar recebimento / Excluir recebimento nas entradas já recebidas.
+- Texto “Despesas sobre o faturamento” substituído por redação profissional.
 - Comentários de continuidade registrados no código e em AI_MAINTENANCE_NOTES.md.
 
 Validações executadas
 - node scripts/verify-project.mjs: OK — 20 arquivos de fonte verificados.
 - Transpilação sintática TypeScript/TSX de FinancePage.tsx: OK.
-- Transpilação sintática TypeScript/TSX de routes/index.tsx: OK.
-- Marcadores de conflito Git (<<<<<<< / ======= / >>>>>>>): nenhum encontrado.
+- Transpilação sintática TypeScript de repository.ts: OK.
+- Marcadores de conflito Git: nenhum encontrado.
 - Pasta GIT/ duplicada: ausente.
 
 Observação
-- O build completo com dependências não foi repetido neste ambiente porque o projeto não contém node_modules localmente. O pipeline da Cloudflare executará npm run build após o push.
+- O typecheck completo não foi executado porque este ambiente não possui as dependências locais do projeto (tipos de Node/Vite).
 
 SQL
-- NÃO. Nenhuma alteração de banco é necessária nesta versão.
+- SIM. Executar somente SQL_ATUALIZACAO_ANA_TAGES_v2.0.10.sql no Supabase.
+- Não reexecutar a migration inicial.
