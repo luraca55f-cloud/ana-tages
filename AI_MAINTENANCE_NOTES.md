@@ -95,3 +95,13 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Corrigido narrowing do cliente Supabase em callbacks assíncronos.
 - Corrigido parsing de mês com `noUncheckedIndexedAccess`.
 - O build só deve ser considerado válido após `npm run build` concluir incluindo `tsc --noEmit`.
+
+## Atualização v2.0.8 — Dashboard financeiro e observabilidade
+
+- **F5 / carregamento:** os cards financeiros não podem exibir `R$ 0,00` enquanto o Supabase ainda está carregando. O estado inicial vazio do React não significa saldo zero. Usar skeleton durante a consulta; em erro, mostrar indisponibilidade em vez de número falso.
+- **Resultado:** o quarto card identifica dinamicamente `Lucro no mês`, `Prejuízo no mês` ou `Resultado do mês` conforme `recebido - despesas`.
+- **Filtro mensal:** o campo `type=month` deve abrir o seletor nativo ao clicar em qualquer ponto do campo, usando `showPicker()` com fallback silencioso para navegadores sem suporte.
+- **Movimentações recentes:** preservar o filtro `Todas / Entradas / Saídas`. Filtrar antes de limitar aos 12 registros. Entrada usa verde suave e Saída vermelho suave; não usar destaques chamativos.
+- **Cloudflare:** `wrangler.jsonc` replica a observabilidade configurada no painel: logs e invocation logs ligados/persistidos e traces desligados.
+- **Estrutura Git:** a pasta legada `GIT/` é duplicação e não deve existir nem ser versionada; a fonte oficial é `/src`.
+- Sempre atualizar estes comentários quando mudar uma dessas regras.

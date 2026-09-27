@@ -14,11 +14,20 @@
       }
     }
   ],
+  // Mantém no código a mesma observabilidade configurada no painel da Cloudflare.
+  // Isso evita que um deploy pelo GitHub volte a divergir das opções de produção.
   "observability": {
     "enabled": true,
     "logs": {
       "enabled": true,
-      "invocation_logs": true
+      "head_sampling_rate": 1,
+      "invocation_logs": true,
+      "persist": true
+    },
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 1,
+      "persist": true
     }
   }
 }

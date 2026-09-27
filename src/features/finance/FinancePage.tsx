@@ -83,18 +83,71 @@ function emptyBundle(): FinanceBundle {
   return { billed: [], receivedInPeriod: [], receivables: [], expenses: [], patients: [] };
 }
 
+function resultLabel(value: number) {
+  if (value > 0) return "Lucro no mês";
+  if (value < 0) return "Prejuízo no mês";
+  return "Resultado do mês";
+}
+
+function MonthPicker({ value, onChange, className = "" }: { value: string; onChange: (value: string) => void; className?: string }) {
+  // Regra de UX: o seletor nativo deve abrir ao clicar em qualquer ponto do campo,
+  // não apenas no pequeno ícone de calendário exibido pelo navegador.
+  const openPicker = (input: HTMLInputElement) => {
+    try {
+      input.showPicker?.();
+    } catch {
+      // Navegadores sem suporte continuam permitindo digitação/uso do ícone nativo.
+    }
+  };
+
+  return (
+    <input
+      type="month"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onClick={(event) => openPicker(event.currentTarget)}
+      aria-label="Selecionar mês"
+      className={`h-10 cursor-pointer rounded-xl border border-border bg-card/70 px-3 text-xs outline-none ${className}`}
+    />
+  );
+}
+
 export function FinanceDashboardMetrics() {
   const [data, setData] = useState<FinanceBundle>(emptyBundle);
   const [previous, setPrevious] = useState<FinanceBundle>(emptyBundle);
+  const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
-    const month = currentMonth();
-    const prev = previousMonth(month);
-    generatePackageBillingsForMonth(month)
-      .then(() => Promise.all([loadFinanceBundle(month), loadFinanceBundle(prev)]))
-      .then(([currentData, previousData]) => { setData(currentData); setPrevious(previousData); })
-      .catch((error) => console.error(error));
+    if (!isSupabaseConfigured) {
+      setLoading(false);
+      return;
+    }
+
+    let active = true;
+    const loadDashboardFinance = async () => {
+      setLoading(true);
+      setLoadError(false);
+      const month = currentMonth();
+      const prev = previousMonth(month);
+      try {
+        await generatePackageBillingsForMonth(month);
+        const [currentData, previousData] = await Promise.all([loadFinanceBundle(month), loadFinanceBundle(prev)]);
+        if (!active) return;
+        setData(currentData);
+        setPrevious(previousData);
+      } catch (error) {
+        console.error(error);
+        if (active) setLoadError(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    // Importante: após F5 os estados React começam vazios. Enquanto o Supabase responde,
+    // o Dashboard deve mostrar carregamento (e não R$ 0,00), evitando comunicar um saldo falso.
+    void loadDashboardFinance();
+    return () => { active = false; };
   }, []);
 
   const received = data.receivedInPeriod.reduce((sum, item) => sum + Number(item.received_amount || 0), 0);
@@ -106,11 +159,11 @@ export function FinanceDashboardMetrics() {
   const previousResult = previousReceived - previousExpenses;
 
   return (
-    <section aria-label="Indicadores financeiros" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="Recebido no mês" value={money(received)} note={changeLabel(received, previousReceived)} icon={<CircleDollarSign />} tone={received > previousReceived ? "positive" : "default"} />
-      <Metric label="A receber" value={money(receivable)} note={`${data.receivables.length} cobrança(s) pendente(s)`} icon={<Clock3 />} />
-      <Metric label="Despesas do mês" value={money(expenses)} note="gastos fixos e variáveis" icon={<TrendingDown />} />
-      <Metric label="Resultado (lucro/prejuízo)" value={money(result)} note={changeLabel(result, previousResult)} icon={<WalletCards />} tone={result < 0 ? "negative" : result > 0 ? "positive" : "default"} />
+    <section aria-label="Indicadores financeiros" aria-busy={loading} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <Metric label="Recebido no mês" value={money(received)} note={changeLabel(received, previousReceived)} icon={<CircleDollarSign />} tone={received > previousReceived ? "positive" : "default"} loading={loading} error={loadError} />
+      <Metric label="A receber" value={money(receivable)} note={`${data.receivables.length} cobrança(s) pendente(s)`} icon={<Clock3 />} loading={loading} error={loadError} />
+      <Metric label="Despesas do mês" value={money(expenses)} note="gastos fixos e variáveis" icon={<TrendingDown />} loading={loading} error={loadError} />
+      <Metric label={resultLabel(result)} value={money(result)} note={changeLabel(result, previousResult)} icon={<WalletCards />} tone={result < 0 ? "negative" : result > 0 ? "positive" : "default"} loading={loading} error={loadError} />
     </section>
   );
 }
@@ -124,6 +177,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
   const [editingPatient, setEditingPatient] = useState<PatientBilling | null>(null);
   const [tab, setTab] = useState<"overview" | "receivables" | "expenses" | "billing">("overview");
+  const [movementFilter, setMovementFilter] = useState<"all" | "revenue" | "expense">("all");
 
   useEffect(() => {
     if (!initialModal) return;
@@ -198,10 +252,17 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
       status: entry.status === "paid" ? "Paga" : "Pendente",
       amount: Number(entry.amount),
     }));
-    return [...revenues, ...expenses]
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 12);
+
+    // Mantém todas as movimentações ordenadas antes do filtro para que "Entradas" e
+    // "Saídas" possam trazer as 12 mais recentes do próprio tipo, inclusive as mais antigas
+    // que ficariam ocultas se o corte fosse feito antes da filtragem.
+    return [...revenues, ...expenses].sort((a, b) => b.date.localeCompare(a.date));
   }, [data.billed, data.expenses]);
+
+  const visibleMovements = useMemo(
+    () => latestMovements.filter((entry) => movementFilter === "all" || entry.type === movementFilter).slice(0, 12),
+    [latestMovements, movementFilter],
+  );
 
   const saveRevenue = async (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, clientRequestId: string) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
@@ -297,7 +358,7 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="h-10 rounded-xl border border-border bg-card/70 px-3 text-xs outline-none" />
+          <MonthPicker value={month} onChange={setMonth} />
           {isSupabaseConfigured && <Button variant="quiet" size="icon" onClick={() => void reload()} disabled={loading} aria-label="Atualizar"><RefreshCw className={loading ? "animate-spin" : ""} /></Button>}
           <Button variant="quiet" onClick={() => { setEditingExpense(null); setModal("expense"); }}><TrendingDown /> Nova despesa</Button>
           <Button variant="dashboard" className="rounded-xl" onClick={() => setModal("revenue")}><TrendingUp /> Nova receita</Button>
@@ -350,8 +411,15 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
           </section>
 
           <section className="dashboard-card rounded-2xl p-5 xl:col-span-2">
-            <div><h2 className="font-display text-lg">Movimentações recentes</h2><p className="mt-1 text-[11px] text-muted-foreground">Entradas e despesas do período em uma única visão.</p></div>
-            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Lançamento</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th></tr></thead><tbody>{latestMovements.map((entry) => <tr key={entry.key} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.date)}</td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${entry.type === "expense" ? "bg-destructive/8 text-destructive" : "bg-primary/8 text-primary"}`}>{entry.type === "expense" ? "Despesa" : "Entrada"}</span></td><td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td><td className="px-3 py-4 text-xs">{entry.origin}</td><td className="px-3 py-4 text-xs">{entry.status}</td><td className={`px-3 py-4 text-right text-xs font-semibold ${entry.type === "expense" ? "text-destructive" : "text-foreground"}`}>{entry.type === "expense" ? `- ${money(entry.amount)}` : money(entry.amount)}</td></tr>)}</tbody></table>{latestMovements.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma movimentação neste período.</p>}</div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><h2 className="font-display text-lg">Movimentações recentes</h2><p className="mt-1 text-[11px] text-muted-foreground">Entradas e saídas do período em uma única visão.</p></div>
+              <div className="flex rounded-xl border border-border bg-background/45 p-1" aria-label="Filtrar movimentações recentes">
+                <MovementFilterButton active={movementFilter === "all"} onClick={() => setMovementFilter("all")}>Todas</MovementFilterButton>
+                <MovementFilterButton active={movementFilter === "revenue"} onClick={() => setMovementFilter("revenue")}>Entradas</MovementFilterButton>
+                <MovementFilterButton active={movementFilter === "expense"} onClick={() => setMovementFilter("expense")}>Saídas</MovementFilterButton>
+              </div>
+            </div>
+            <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Data</th><th className="px-3 py-3 font-medium">Tipo</th><th className="px-3 py-3 font-medium">Lançamento</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Valor</th></tr></thead><tbody>{visibleMovements.map((entry) => <tr key={entry.key} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.date)}</td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${entry.type === "expense" ? "bg-red-500/10 text-red-700" : "bg-emerald-500/10 text-emerald-700"}`}>{entry.type === "expense" ? "Saída" : "Entrada"}</span></td><td className="px-3 py-4"><p className="text-[13px] font-medium">{entry.title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.description}</p></td><td className="px-3 py-4 text-xs">{entry.origin}</td><td className="px-3 py-4 text-xs">{entry.status}</td><td className={`px-3 py-4 text-right text-xs font-semibold ${entry.type === "expense" ? "text-red-700" : "text-emerald-700"}`}>{entry.type === "expense" ? `- ${money(entry.amount)}` : money(entry.amount)}</td></tr>)}</tbody></table>{visibleMovements.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhuma movimentação encontrada neste filtro.</p>}</div>
           </section>
         </div>
       )}
@@ -387,9 +455,13 @@ export function FinancePage({ initialModal = null, onInitialModalHandled }: { in
   );
 }
 
-function Metric({ label, value, note, icon, tone = "default" }: { label: string; value: string; note: string; icon: ReactNode; tone?: "default" | "positive" | "negative" }) {
+function Metric({ label, value, note, icon, tone = "default", loading = false, error = false }: { label: string; value: string; note: string; icon: ReactNode; tone?: "default" | "positive" | "negative"; loading?: boolean; error?: boolean }) {
   const valueTone = tone === "negative" ? "text-destructive" : tone === "positive" ? "text-primary" : "text-foreground";
-  return <article className="dashboard-card rounded-2xl p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-primary [&_svg]:size-5">{icon}</span></div><p className={`mt-3 min-h-[2.6rem] font-display text-[28px] leading-[1.15] tabular-nums sm:text-[30px] ${valueTone}`}>{value}</p><p className="mt-3 min-h-4 text-[11px] leading-4 text-muted-foreground">{note}</p></article>;
+  return <article className="dashboard-card rounded-2xl p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-primary [&_svg]:size-5">{icon}</span></div>{loading ? <><div className="mt-4 h-8 w-36 animate-pulse rounded-lg bg-muted/70" /><div className="mt-4 h-3 w-44 animate-pulse rounded bg-muted/60" /></> : <><p className={`mt-3 min-h-[2.6rem] font-display text-[28px] leading-[1.15] tabular-nums sm:text-[30px] ${error ? "text-muted-foreground" : valueTone}`}>{error ? "—" : value}</p><p className={`mt-3 min-h-4 text-[11px] leading-4 ${error ? "text-destructive" : "text-muted-foreground"}`}>{error ? "Não foi possível carregar os dados financeiros." : note}</p></>}</article>;
+}
+
+function MovementFilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return <button type="button" onClick={onClick} className={`rounded-lg px-3 py-1.5 text-[10px] font-medium transition-colors ${active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>{children}</button>;
 }
 
 function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {

@@ -225,12 +225,18 @@ function ConsultorioApp() {
   const [verifiedPatient, setVerifiedPatient] = useState<PatientView | null>(null);
   const [settings, setSettings] = useState<AppSettingsRow | null>(null);
   const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null);
-  const [loadingCore, setLoadingCore] = useState(false);
+  const [loadingCore, setLoadingCore] = useState(isSupabaseConfigured);
+  const [coreLoadError, setCoreLoadError] = useState(false);
   const [pendingQuickAction, setPendingQuickAction] = useState<QuickAction | null>(null);
 
   const refreshCore = useCallback(async () => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured) {
+      setLoadingCore(false);
+      setCoreLoadError(false);
+      return;
+    }
     setLoadingCore(true);
+    setCoreLoadError(false);
     try {
       const now = new Date();
       const from = new Date(now); from.setFullYear(from.getFullYear() - 1);
@@ -245,6 +251,7 @@ function ConsultorioApp() {
       setSettings(appSettings);
     } catch (error) {
       console.error(error);
+      setCoreLoadError(true);
     } finally {
       setLoadingCore(false);
     }
@@ -288,7 +295,7 @@ function ConsultorioApp() {
       <div className="min-w-0 flex-1">
         <header className="sticky top-0 z-30 flex h-16 items-center border-b border-border bg-background/90 px-4 backdrop-blur-xl sm:px-7">
           <Button variant="ghost" size="icon" className="mr-2 lg:hidden" onClick={() => setMenuOpen(true)}><Menu /></Button>
-          <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : "Dados atualizados"}</div>
+          <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
             <Button variant="quiet" size="icon" className="rounded-full" onClick={() => void signOut()}><LogOut /></Button>
@@ -297,7 +304,7 @@ function ConsultorioApp() {
         </header>
 
         <main className="mx-auto max-w-[1460px] p-4 sm:p-7">
-          {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} openModule={openModule} openRecord={setRecordPatient} onQuickAction={runQuickAction} />}
+          {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} loading={loadingCore} loadError={coreLoadError} openModule={openModule} openRecord={setRecordPatient} onQuickAction={runQuickAction} />}
           {activeModule === "Agenda" && <AgendaPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
           {activeModule === "Pacientes" && <PatientsPage patients={patientViews} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
           {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} initialCreate={pendingQuickAction === "session"} onInitialCreateHandled={() => setPendingQuickAction(null)} />}
@@ -319,7 +326,9 @@ function PageHeader({ title, description, action }: { title: string; description
   return <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl leading-tight">{title}</h1><p className="mt-2 max-w-3xl text-sm text-muted-foreground">{description}</p></div>{action}</section>;
 }
 
-function DashboardPage({ patients: _patients, appointments, openModule, openRecord: _openRecord, onQuickAction }: { patients: PatientView[]; appointments: AppointmentRow[]; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void; onQuickAction: (action: QuickAction) => void }) {
+// Regra de continuidade: após F5, arrays vazios são apenas o estado inicial do React.
+// Não apresentar zeros/"nenhum" até o carregamento principal terminar; use skeleton/erro explícito.
+function DashboardPage({ patients: _patients, appointments, loading, loadError, openModule, openRecord: _openRecord, onQuickAction }: { patients: PatientView[]; appointments: AppointmentRow[]; loading: boolean; loadError: boolean; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void; onQuickAction: (action: QuickAction) => void }) {
   const today = isoDateLocal();
   const now = Date.now();
   const todayAppointments = appointments.filter((item) => item.scheduled_at.slice(0, 10) === today && item.status !== "cancelled").sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at));
@@ -343,12 +352,12 @@ function DashboardPage({ patients: _patients, appointments, openModule, openReco
         <div className="flex items-center justify-between gap-3"><div><h2 className="font-display text-lg">Agenda e próximos atendimentos</h2><p className="mt-1 text-[11px] text-muted-foreground">Hoje e os próximos compromissos já agendados.</p></div><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Agenda")}>Ver agenda <ChevronRight /></Button></div>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div>
-            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hoje</p><span className="text-[10px] text-muted-foreground">{todayAppointments.length}</span></div>
-            <div className="space-y-2">{todayAppointments.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">Nenhum atendimento hoje.</div>}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)}</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div>
+            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Hoje</p><span className="text-[10px] text-muted-foreground">{loading || loadError ? "—" : todayAppointments.length}</span></div>
+            <div className="space-y-2">{loading ? <DashboardAgendaSkeleton /> : loadError ? <DashboardLoadError /> : <>{todayAppointments.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">Nenhum atendimento hoje.</div>}{todayAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-12 text-xs font-semibold">{new Date(item.scheduled_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)}</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</>}</div>
           </div>
           <div>
-            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Próximos</p><span className="text-[10px] text-muted-foreground">{upcomingAppointments.length}</span></div>
-            <div className="space-y-2">{upcomingAppointments.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">Nenhuma próxima sessão agendada.</div>}{upcomingAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-[72px] shrink-0 text-[11px] font-semibold">{new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.scheduled_at))}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)}</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</div>
+            <div className="mb-2 flex items-center justify-between"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Próximos</p><span className="text-[10px] text-muted-foreground">{loading || loadError ? "—" : upcomingAppointments.length}</span></div>
+            <div className="space-y-2">{loading ? <DashboardAgendaSkeleton /> : loadError ? <DashboardLoadError /> : <>{upcomingAppointments.length === 0 && <div className="rounded-xl border border-dashed border-border px-3 py-5 text-center text-[11px] text-muted-foreground">Nenhuma próxima sessão agendada.</div>}{upcomingAppointments.map((item) => <div key={item.id} className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/45 p-3"><span className="w-[72px] shrink-0 text-[11px] font-semibold">{new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(item.scheduled_at))}</span><div className="min-w-0 flex-1"><p className="truncate text-[13px] font-medium">{item.patient_name || appointmentServiceLabel(item)}</p><p className="text-[10px] text-muted-foreground">{appointmentServiceLabel(item)} • {modalityLabel(item.modality)}</p></div><StatusBadge status={statusLabel(item.status)} /></div>)}</>}</div>
           </div>
         </div>
       </section>
@@ -366,19 +375,27 @@ function DashboardPage({ patients: _patients, appointments, openModule, openReco
       <section className="dashboard-card col-span-12 rounded-2xl p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="font-display text-lg">Atendimentos deste mês</h2><p className="mt-1 text-[11px] text-muted-foreground">Resumo direto, sem misturar com o financeiro.</p></div><Button variant="link" className="h-auto p-0 text-xs" onClick={() => openModule("Sessões")}>Ver atendimentos <ChevronRight /></Button></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <DashboardMiniStat label="Total" value={String(monthly.length)} note="registrados" />
-          <DashboardMiniStat label="Futuros" value={String(monthlyFuture)} note="a realizar" />
-          <DashboardMiniStat label="Concluídos" value={String(monthlyCompleted)} note="finalizados" />
-          <DashboardMiniStat label="Presenciais" value={String(monthlyPresential)} note="no consultório" />
-          <DashboardMiniStat label="On-line" value={String(monthlyOnline)} note="remotos" />
+          <DashboardMiniStat label="Total" value={String(monthly.length)} note="registrados" loading={loading} error={loadError} />
+          <DashboardMiniStat label="Futuros" value={String(monthlyFuture)} note="a realizar" loading={loading} error={loadError} />
+          <DashboardMiniStat label="Concluídos" value={String(monthlyCompleted)} note="finalizados" loading={loading} error={loadError} />
+          <DashboardMiniStat label="Presenciais" value={String(monthlyPresential)} note="no consultório" loading={loading} error={loadError} />
+          <DashboardMiniStat label="On-line" value={String(monthlyOnline)} note="remotos" loading={loading} error={loadError} />
         </div>
       </section>
     </div>
   </>;
 }
 
-function DashboardMiniStat({ label, value, note }: { label: string; value: string; note: string }) {
-  return <div className="rounded-xl border border-border bg-background/45 p-4"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-2 font-display text-2xl leading-none">{value}</p><p className="mt-2 text-[10px] text-muted-foreground">{note}</p></div>;
+function DashboardAgendaSkeleton() {
+  return <div className="rounded-xl border border-border/70 bg-background/35 p-3" aria-hidden="true"><div className="h-3 w-20 animate-pulse rounded bg-muted/70" /><div className="mt-2 h-3 w-40 animate-pulse rounded bg-muted/55" /></div>;
+}
+
+function DashboardLoadError() {
+  return <div className="rounded-xl border border-dashed border-destructive/30 px-3 py-5 text-center text-[11px] text-destructive">Não foi possível carregar estes dados.</div>;
+}
+
+function DashboardMiniStat({ label, value, note, loading = false, error = false }: { label: string; value: string; note: string; loading?: boolean; error?: boolean }) {
+  return <div className="rounded-xl border border-border bg-background/45 p-4"><p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>{loading ? <div className="mt-3 h-6 w-10 animate-pulse rounded bg-muted/70" /> : <p className={`mt-2 font-display text-2xl leading-none ${error ? "text-muted-foreground" : ""}`}>{error ? "—" : value}</p>}<p className={`mt-2 text-[10px] ${error ? "text-destructive" : "text-muted-foreground"}`}>{error ? "Dados indisponíveis" : note}</p></div>;
 }
 
 function AgendaPage({ patients, services, onChanged }: { patients: PatientRow[]; services: ServiceCatalogItem[]; onChanged: () => Promise<void> }) {

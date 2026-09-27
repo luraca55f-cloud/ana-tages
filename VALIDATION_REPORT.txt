@@ -1,25 +1,30 @@
-ANA TAGES — CLEAN START v2.0.2
+ANA TAGES v2.0.8 — RELATÓRIO DE VALIDAÇÃO
+Data: 26/09/2026
 
-Origem da correção:
-- Build Cloudflare de 24/09/2026.
-- Instalação de dependências concluída.
-- verify:project concluído.
-- Vite client build concluído.
-- Vite SSR build concluído.
-- A falha ocorreu exclusivamente no passo `tsc --noEmit`.
+Base utilizada
+- Base estável restaurada a partir do ZIP original confirmado pelo usuário.
+- A pasta duplicada legada GIT/ foi removida e bloqueada no .gitignore.
 
-Erros do typecheck tratados nesta versão:
-1. TS4111 em dataset do Turnstile -> acesso por índice.
-2. TS18047 no Supabase dentro de callbacks -> cliente não nulo capturado em constante local.
-3. TS4111 nos objetos `allowed` de repository.ts -> acessos por índice.
-4. TS4111 nas variáveis `import.meta.env` -> acessos por índice.
-5. TS2345 / TS18048 no parsing de mês -> parsing validado sem valores undefined.
+Alterações incluídas
+- Dashboard: durante F5/carregamento, cards financeiros usam skeleton e não exibem R$ 0,00 falso.
+- Dashboard: agenda e resumo mensal também deixam de exibir zeros/"nenhum" falsos durante o carregamento principal.
+- Dashboard: falha de consulta passa a ser indicada explicitamente em vez de ser apresentada como dado zerado.
+- Resultado financeiro: rótulo dinâmico Lucro no mês / Prejuízo no mês / Resultado do mês.
+- Financeiro: seletor de mês abre ao clicar em qualquer área do campo quando o navegador oferece showPicker().
+- Movimentações recentes: filtro Todas / Entradas / Saídas.
+- Movimentações recentes: Entrada em verde suave e Saída em vermelho suave, sem destaque espalhafatoso.
+- Cloudflare: wrangler.jsonc sincronizado com logs/invocation logs persistidos e traces desabilitados.
+- Comentários de continuidade registrados no código e em AI_MAINTENANCE_NOTES.md.
 
-Validações locais possíveis neste ambiente:
-- `node scripts/verify-project.mjs`: OK.
-- Varredura de imports locais/dependências: OK pelo verificador do projeto.
-- Nenhum node_modules/package-lock antigo foi incluído no pacote.
+Validações executadas
+- node scripts/verify-project.mjs: OK — 20 arquivos de fonte verificados.
+- Transpilação sintática TypeScript/TSX de FinancePage.tsx: OK.
+- Transpilação sintática TypeScript/TSX de routes/index.tsx: OK.
+- Marcadores de conflito Git (<<<<<<< / ======= / >>>>>>>): nenhum encontrado.
+- Pasta GIT/ duplicada: ausente.
 
-Limitação do ambiente desta geração:
-- O registro npm não estava acessível (EAI_AGAIN), portanto não foi possível reinstalar as dependências localmente para repetir o build completo fora da Cloudflare.
-- O log da Cloudflare demonstrou que a instalação e os dois builds Vite da v2.0.1 já passavam; as mudanças v2.0.2 são restritas aos erros de TypeScript listados pelo próprio `tsc`.
+Observação
+- O build completo com dependências não foi repetido neste ambiente porque o projeto não contém node_modules localmente. O pipeline da Cloudflare executará npm run build após o push.
+
+SQL
+- NÃO. Nenhuma alteração de banco é necessária nesta versão.
