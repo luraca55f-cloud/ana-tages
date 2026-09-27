@@ -1,25 +1,25 @@
-ANA TAGES v2.0.16 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.17 — RELATÓRIO DE VALIDAÇÃO
 
 Base:
-- ANA TAGES v2.0.15 limpa.
+- ANA TAGES v2.0.16 limpa.
 
 Correções:
-- Criação do cofre deixa de usar UPSERT com owner_id e passa a atualizar apenas colunas mutáveis.
-- Fallback de INSERT permanece somente para configuração ainda inexistente.
-- Erros Supabase/PostgREST do cofre agora são traduzidos para mensagens acionáveis.
-- Botão de criação fica bloqueado durante o processamento para evitar envio duplicado.
-- Recuperação de senha PKCE da v2.0.15 foi preservada.
+- Recuperação de senha passa a exigir Google Authenticator antes de updateUser({ password }) quando MFA está ativo.
+- Fluxo correto: link PKCE -> sessão de recuperação -> TOTP -> AAL2 -> nova senha.
+- Tela de recuperação mostra a conta vinculada ao próprio link e não permite trocar o usuário durante a redefinição.
+- Solicitação de recuperação usa resposta genérica: somente o e-mail cadastrado recebe link válido, sem enumerar contas existentes.
+- Erro técnico de AAL2 deixa de ser exibido ao usuário; quando a elevação expira, a interface orienta reconfirmar o autenticador.
+- Após a troca, sessão local é encerrada e novo login + MFA é obrigatório.
 
 SQL:
-- NÃO há SQL novo na v2.0.16.
+- NÃO há SQL novo na v2.0.17.
 - Se SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql já foi aplicado, não executar SQL adicional.
 - Não reexecutar a migration inicial.
 
 Validações executadas:
 - verify-project.mjs: OK (20 arquivos de fonte).
-- fluxo criptográfico local: criar cofre com senha curta -> desbloquear -> recuperar por código -> descriptografar o mesmo conteúdo: OK.
-- análise sintática TypeScript dos arquivos alterados: sem diagnósticos de sintaxe.
+- análise sintática TypeScript/TSX de AuthGate.tsx e supabase.ts: OK.
 - ausência de pasta GIT duplicada e marcadores de conflito.
 
 Observação:
-- npm install/build completo não foi executado neste ambiente porque o cache offline não contém @cloudflare/vite-plugin. O pipeline Cloudflare deve executar o build completo após o push.
+- npm build completo não foi executado neste ambiente por ausência local das dependências node_modules; o pipeline Cloudflare executará o build completo após o push.

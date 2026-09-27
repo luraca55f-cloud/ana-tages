@@ -117,7 +117,7 @@ Leia `AI_MAINTENANCE_NOTES.md` antes de alterar dependências, deploy, imports o
 - A senha do cofre não possui requisito mínimo imposto pela aplicação; continua recomendado usar uma senha difícil de adivinhar.
 - SQL atual: `SQL_ATUALIZACAO_ANA_TAGES_v2.0.15.sql`. Não reexecute a migration inicial em produção.
 
-## Correção v2.0.16
+## Correção v2.0.17
 
 A criação do cofre clínico foi corrigida para não tentar atualizar `owner_id` via UPSERT. O cofre também passa a exibir o motivo real quando o Supabase rejeita a persistência, mantendo a recuperação de senha/cofre introduzida nas versões anteriores. Não há SQL novo nesta versão além do SQL v2.0.14 já necessário para a arquitetura recuperável do cofre.
 

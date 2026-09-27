@@ -138,8 +138,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
 
     // A recuperação usa PKCE com detectSessionInUrl=false. Portanto o código retornado
-    // pelo Supabase precisa ser trocado explicitamente por uma sessão antes de mostrar
-    // a tela "Definir nova senha". Não passar pelo MFA nessa sessão temporária.
+    // pelo Supabase precisa ser trocado explicitamente por uma sessão. Como o projeto
+    // exige MFA/AAL2 para alteração de senha, a sessão de recuperação entra primeiro na
+    // confirmação do Google Authenticator e só depois libera "Definir nova senha".
     const initialize = async () => {
       if (recoveryRequested && recoveryCode) {
         const { data: recovered, error: exchangeError } = await client.auth.exchangeCodeForSession(recoveryCode);
@@ -157,11 +158,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
         clearRecoveryUrl();
         setUser(recovered.user);
-        setMfaStage("checking");
         setAuthMode("reset");
         setError("");
         setNotice("");
         setLoading(false);
+        await resolveMfa();
         return;
       }
 
@@ -179,10 +180,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setLoading(false);
 
       if (event === "PASSWORD_RECOVERY") {
-        setMfaStage("checking");
         setAuthMode("reset");
         setError("");
         setNotice("");
+        void resolveMfa();
         return;
       }
 
@@ -255,8 +256,47 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   if (isSupabaseConfigured && user && authMode === "reset") {
+    const verifyRecoveryMfa = async () => {
+      if (!supabase || !factorId || !/^\d{6}$/.test(mfaCode)) {
+        setError("Informe o código de 6 dígitos do Google Authenticator.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: mfaCode });
+      setMfaCode("");
+      if (verifyError) {
+        setError("Código do Google Authenticator inválido ou expirado.");
+        setSubmitting(false);
+        return;
+      }
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        setError("Não foi possível elevar a sessão para o nível seguro exigido. Solicite um novo link de recuperação.");
+        setSubmitting(false);
+        return;
+      }
+      await resolveMfa();
+      setSubmitting(false);
+    };
+
+    const cancelRecovery = async () => {
+      if (supabase) await supabase.auth.signOut({ scope: "local" });
+      setPassword("");
+      setConfirmPassword("");
+      setMfaCode("");
+      setError("");
+      setNotice("");
+      setAuthMode("login");
+      setMfaStage("checking");
+    };
+
     const saveNewPassword = async () => {
-      if (!supabase || !password || password !== confirmPassword) {
+      if (!supabase || mfaStage !== "ready") {
+        setError("Confirme o Google Authenticator antes de definir a nova senha.");
+        return;
+      }
+      if (!password || password !== confirmPassword) {
         setError("Informe a nova senha e repita exatamente o mesmo valor.");
         return;
       }
@@ -265,7 +305,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setNotice("");
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
-        setError(updateError.message || "Não foi possível atualizar a senha.");
+        const normalized = updateError.message.toLowerCase();
+        if (normalized.includes("aal2") || normalized.includes("mfa")) {
+          setError("A confirmação do Google Authenticator expirou. Confirme o código novamente e tente salvar.");
+          await resolveMfa();
+        } else {
+          setError(updateError.message || "Não foi possível atualizar a senha.");
+        }
         setSubmitting(false);
         return;
       }
@@ -273,23 +319,69 @@ export function AuthGate({ children }: { children: ReactNode }) {
       await supabase.auth.signOut({ scope: "local" });
       setPassword("");
       setConfirmPassword("");
+      setMfaCode("");
       setAuthMode("login");
-      setNotice("Senha alterada. Entre novamente com a nova senha.");
+      setMfaStage("checking");
+      setNotice("Senha alterada. Entre novamente com a nova senha e confirme o Google Authenticator.");
       setSubmitting(false);
     };
+
+    if (mfaStage !== "ready") {
+      return (
+        <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+          <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
+            <span className="grid size-12 place-items-center rounded-2xl bg-accent"><ShieldCheck className="size-5" /></span>
+            <h1 className="mt-5 font-display text-2xl">Confirmar identidade</h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              O link de recuperação já identifica a conta cadastrada. Para autorizar a troca da senha, confirme também o código atual do Google Authenticator.
+            </p>
+            {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
+            {mfaStage === "checking" && <p className="mt-5 text-sm text-muted-foreground">Verificando a autenticação em duas etapas...</p>}
+            {mfaStage === "required" && (
+              <>
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, ""))}
+                  onKeyDown={(event) => { if (event.key === "Enter") void verifyRecoveryMfa(); }}
+                  className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]"
+                  placeholder="000000"
+                />
+                <Button variant="dashboard" className="mt-4 w-full" disabled={submitting || mfaCode.length !== 6} onClick={() => void verifyRecoveryMfa()}>
+                  {submitting ? "Confirmando..." : "Confirmar código"}
+                </Button>
+              </>
+            )}
+            {mfaStage === "enroll" && (
+              <p className="mt-5 text-sm text-destructive">
+                Esta conta não possui um autenticador verificado. Por segurança, a redefinição de senha não pode continuar por este fluxo.
+              </p>
+            )}
+            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+            <Button variant="ghost" className="mt-3 w-full" onClick={() => void cancelRecovery()}>Cancelar recuperação</Button>
+          </section>
+        </main>
+      );
+    }
 
     return (
       <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
         <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
           <span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span>
           <h1 className="mt-5 font-display text-2xl">Definir nova senha</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">Crie uma nova senha de acesso. Depois, faça login normalmente e confirme o Google Authenticator.</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            E-mail e Google Authenticator confirmados. Agora crie a nova senha de acesso.
+          </p>
+          {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
           <div className="mt-6 space-y-4">
             <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Nova senha</span><input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
             <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Repita a nova senha</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveNewPassword(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
           </div>
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
           <Button variant="dashboard" className="mt-6 w-full" onClick={() => void saveNewPassword()} disabled={submitting || !password || !confirmPassword}>{submitting ? "Salvando..." : "Salvar nova senha"}</Button>
+          <Button variant="ghost" className="mt-2 w-full" onClick={() => void cancelRecovery()}>Cancelar</Button>
         </section>
       </main>
     );
@@ -306,8 +398,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setNotice("");
       const redirectTo = `${window.location.origin}${window.location.pathname}?mode=recovery`;
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
-      if (resetError) setError(resetError.message || "Não foi possível enviar o e-mail de recuperação.");
-      else setNotice("E-mail de recuperação enviado. Abra o link recebido para definir uma nova senha.");
+      if (resetError) setError(resetError.message || "Não foi possível iniciar a recuperação de senha.");
+      else setNotice("Se este for o e-mail cadastrado na conta, um link seguro de recuperação será enviado. Outros endereços não recebem acesso à redefinição.");
       setSubmitting(false);
     };
 
@@ -349,7 +441,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
             <span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span>
             <h1 className="mt-5 font-display text-2xl">Recuperar senha de acesso</h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Informe o e-mail usado no sistema. Você receberá um link seguro para criar uma nova senha.</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Informe o e-mail cadastrado na conta. Somente o endereço registrado no Supabase recebe um link válido de redefinição.</p>
             <label className="mt-6 block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">E-mail</span><input autoFocus value={email} onChange={(event) => setEmail(event.target.value.slice(0, 254))} onKeyDown={(event) => { if (event.key === "Enter") void requestPasswordReset(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="email" /></label>
             {notice && <p className="mt-3 text-xs text-primary">{notice}</p>}
             {error && <p className="mt-3 text-xs text-destructive">{error}</p>}

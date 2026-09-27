@@ -171,3 +171,13 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Criptografia:** fluxo testado com senha curta, desbloqueio por senha, recuperação por código e leitura do mesmo conteúdo cifrado. Não reintroduzir requisito mínimo de senha.
 - **SQL:** nenhuma alteração nova de schema/RPC nesta versão. Se a v2.0.14 já foi aplicada, SQL adicional: NÃO.
 
+
+
+## Atualização v2.0.17 — recuperação de senha com MFA/AAL2
+
+- **Conta correta:** `resetPasswordForEmail()` não redefine senha por si só; apenas a conta existente correspondente ao e-mail recebe um link válido. A interface deve manter resposta genérica para não enumerar usuários, mas explicar que somente o e-mail cadastrado obtém acesso à redefinição.
+- **MFA antes da nova senha:** quando MFA está habilitado, o Supabase exige sessão `aal2` para `updateUser({ password })`. Portanto o fluxo correto é: link do e-mail cadastrado → `exchangeCodeForSession()` → desafio TOTP/Google Authenticator → `refreshSession()` → nova senha.
+- **Nunca contornar AAL2:** não desabilitar MFA, não usar service role no frontend e não tentar alterar senha em sessão de recuperação `aal1`.
+- **Conta vinculada:** a tela de recuperação exibe o `user.email` da própria sessão criada pelo link; não permite escolher outra conta após abrir o link.
+- **Pós-troca:** depois de `updateUser({ password })`, encerrar a sessão local e exigir novo login + MFA.
+- **SQL:** nenhuma alteração de schema/RPC nesta versão. SQL adicional: NÃO.
