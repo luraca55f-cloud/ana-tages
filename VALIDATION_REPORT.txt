@@ -1,26 +1,19 @@
-ANA TAGES v2.0.11 — RELATÓRIO DE VALIDAÇÃO
-Data: 27/09/2026
+ANA TAGES v2.0.12 — RELATÓRIO DE VALIDAÇÃO
 
-Base utilizada
-- ANA TAGES v2.0.10 limpa.
-- Sem pasta duplicada GIT/.
+Base:
+- ANA TAGES v2.0.11 limpa.
 
-Alterações incluídas
-- Movimentações recentes: despesas/saídas agora exibem Editar despesa e Excluir despesa na coluna Ações.
-- As ações reutilizam exatamente os fluxos já existentes da aba Despesas (`startExpenseEdit` / `removeExpense`).
-- A referência da despesa é mantida apenas no objeto de apresentação da tabela para acionar o fluxo correto; nenhuma nova permissão direta foi concedida ao frontend.
-- Comentários de continuidade atualizados em FinancePage.tsx e AI_MAINTENANCE_NOTES.md.
-- README atualizado para esclarecer que a migration inicial não deve ser reexecutada em uma produção já existente.
+Alteração:
+- Modal de atendimento informa o motivo real quando o cadastro é bloqueado.
+- Validação local identifica paciente/cliente, data/hora, serviço, duração e valor inválidos.
+- Erros do banco são traduzidos para mensagens específicas de conflito de agenda, MFA/permissão, regra de dados e conexão.
+- Falha de recebimento após salvar o atendimento é diferenciada de falha do cadastro.
 
-SQL
-- NÃO. A v2.0.11 não exige alteração no Supabase.
-- Os fluxos `update_expense` / `delete_expense` já existiam na base v2.0.10 e continuam sendo reutilizados.
+SQL:
+- NÃO. A v2.0.12 não exige alteração no Supabase.
 
-Validações executadas
-- `node scripts/verify-project.mjs`: OK — 20 arquivos de fonte verificados; imports locais e dependências conferidos.
-- Transpilação sintática TypeScript/TSX de FinancePage.tsx: OK.
-- Transpilação sintática TypeScript de repository.ts: OK.
-- Transpilação sintática TypeScript de types.ts: OK.
-- Marcadores de conflito Git: nenhum encontrado.
-- Pasta GIT/ duplicada: ausente.
-- `tsc --noEmit`: não concluído neste ambiente porque os type definitions locais de `node` e `vite/client` não estão instalados. O pipeline Cloudflare executará o typecheck completo no build com as dependências do projeto.
+Validações executadas:
+- verify-project.mjs
+- busca por marcadores de conflito Git
+- busca por pasta GIT duplicada
+- checagem sintática TypeScript/TSX quando disponível no ambiente

@@ -196,6 +196,46 @@ function appointmentServiceLabel(item: AppointmentRow) {
   return item.service_name?.trim() || serviceLabel(item.service_kind);
 }
 
+type AppSaveError = { code?: string; message?: string; details?: string; hint?: string };
+
+// Traduz falhas de persistência do atendimento para mensagens úteis ao usuário.
+// Não exibir o erro bruto do banco na interface: ele pode conter nomes internos de constraints/RPCs.
+// Sempre mantenha os casos de conflito de agenda e expiração de MFA explícitos, pois são os
+// bloqueios operacionais mais comuns e precisam dizer exatamente o que deve ser corrigido.
+function appointmentSaveErrorMessage(error: unknown) {
+  const dbError = (error && typeof error === "object" ? error : {}) as AppSaveError;
+  const code = dbError.code ?? "";
+  const message = dbError.message ?? (error instanceof Error ? error.message : "");
+  const details = dbError.details ?? "";
+  const combined = `${message} ${details}`.toLowerCase();
+
+  if (code === "23P01" || combined.includes("sobrepondo") || combined.includes("overlap")) {
+    return "Este horário conflita com outro atendimento ativo. Escolha outro horário ou reduza a duração do atendimento.";
+  }
+  if (code === "23505" && (combined.includes("appointments_open_slot_unique") || combined.includes("scheduled_at"))) {
+    return "Já existe um atendimento cadastrado neste horário. Escolha outro horário.";
+  }
+  if (code === "42501" || combined.includes("mfa obrigatório") || combined.includes("row-level security") || combined.includes("permission denied")) {
+    return "Sua autorização de segurança expirou ou não permite esta operação. Confirme o acesso/MFA e tente novamente.";
+  }
+  if (code === "23514") {
+    if (combined.includes("duration") || combined.includes("duração")) return "A duração do atendimento deve ficar entre 10 e 240 minutos.";
+    if (combined.includes("amount") || combined.includes("valor")) return "O valor informado para o atendimento é inválido.";
+    return "Um dos dados do atendimento não atende às regras de cadastro. Revise os campos informados.";
+  }
+  if (code === "22023" || combined.includes("valor inválido") || combined.includes("data inválida")) {
+    return message && !message.toLowerCase().includes("invalid input syntax")
+      ? message
+      : "Há um dado inválido no atendimento. Revise data, duração e valor.";
+  }
+  if (combined.includes("failed to fetch") || combined.includes("network") || combined.includes("fetch")) {
+    return "Não foi possível comunicar com o servidor. Verifique a conexão e tente novamente.";
+  }
+  if (combined.includes("supabase não configurado")) return "O serviço de dados não está configurado corretamente.";
+
+  return "Não foi possível salvar o atendimento por um erro inesperado. Tente novamente; se persistir, consulte os logs do sistema.";
+}
+
 function availableServices(settings: AppSettingsRow | null) {
   const catalog = settings?.service_catalog;
   return Array.isArray(catalog) && catalog.length ? catalog : DEFAULT_SERVICE_CATALOG;
@@ -939,18 +979,43 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
   };
 
   const save = async () => {
-    if (!when || !name.trim() || !selectedService) return;
+    // Validação local deve dizer qual campo impede o cadastro antes de chamar o Supabase.
+    if (!name.trim()) { setError("Informe o paciente / cliente."); return; }
+    if (!when) { setError("Informe a data e o horário do atendimento."); return; }
+    if (!selectedService) { setError("Selecione um serviço antes de salvar o atendimento."); return; }
+    if (!Number.isInteger(duration) || duration < 10 || duration > 240) {
+      setError("A duração do atendimento deve ficar entre 10 e 240 minutos.");
+      return;
+    }
+    if (!isPackageSession && amount.trim()) {
+      const typedAmount = Number(amount.replace(",", "."));
+      if (!Number.isFinite(typedAmount) || typedAmount < 0 || typedAmount > 1_000_000) {
+        setError("Informe um valor válido entre R$ 0,00 e R$ 1.000.000,00.");
+        return;
+      }
+    }
+
+    const parsed = new Date(when);
+    if (Number.isNaN(parsed.getTime())) { setError("A data e o horário informados são inválidos."); return; }
+
     setSaving(true); setError("");
+    let stage: "appointment" | "payment" | "refresh" = "appointment";
     try {
-      const parsed = new Date(when);
-      if (Number.isNaN(parsed.getTime())) throw new Error("data inválida");
       const payload = { patient_id:patientId||null, patient_name:name.trim(), scheduled_at:parsed.toISOString(), duration_minutes:duration, modality, status, service_kind:selectedService.kind, service_name:selectedService.name, amount:numericAmount, notes_admin:notes.trim()||null };
       const saved = appointment ? await updateAppointment(appointment.id, payload) : await createAppointment(payload as Omit<AppointmentRow, "id" | "created_at">, requestId);
+      stage = "payment";
       if (paymentReceived && canCharge && currentPayment?.status !== "paid") await markAppointmentPaid(saved.id);
+      stage = "refresh";
       await onSaved();
     } catch (saveError) {
-      console.error(saveError);
-      setError("Não foi possível salvar. Confira os dados; o horário também pode estar ocupado por outro atendimento.");
+      console.error("Falha ao salvar atendimento", { stage, error: saveError });
+      if (stage === "appointment") {
+        setError(appointmentSaveErrorMessage(saveError));
+      } else if (stage === "payment") {
+        setError(`O atendimento foi salvo, mas o recebimento não pôde ser registrado. ${appointmentSaveErrorMessage(saveError)}`);
+      } else {
+        setError("O atendimento foi salvo, mas a tela não conseguiu atualizar os dados. Feche esta janela e atualize a página.");
+      }
     }
     finally { setSaving(false); }
   };

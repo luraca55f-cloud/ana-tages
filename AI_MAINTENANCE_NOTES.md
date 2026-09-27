@@ -123,3 +123,11 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Rastreabilidade:** edição e exclusão continuam passando pelas RPCs seguras já existentes (`update_expense` / `delete_expense`) e pela auditoria do banco.
 - **UX:** manter os botões discretos; `Editar despesa` neutro e `Excluir despesa` com destaque destrutivo moderado, sem poluir a tabela.
 - **Banco:** esta versão não altera schema nem RPCs. SQL adicional: NÃO.
+
+## Atualização v2.0.12 — mensagens específicas ao salvar atendimentos
+
+- **Nunca usar erro genérico de cadastro** quando for possível identificar o bloqueio. O modal de atendimento deve informar claramente campo obrigatório, data inválida, duração inválida, valor inválido, conflito de agenda, expiração/autorização MFA ou falha de comunicação.
+- **Conflito de agenda:** erros PostgreSQL `23P01`, mensagens de sobreposição e a constraint de horário devem ser traduzidos para uma orientação direta para escolher outro horário ou ajustar a duração.
+- **Etapas separadas:** se o atendimento já foi salvo e apenas a baixa financeira falhar, a interface deve dizer explicitamente que o atendimento foi salvo e que somente o recebimento falhou. Não apresentar isso como falha total do cadastro.
+- **Segurança:** detalhes técnicos brutos do Supabase/PostgreSQL continuam apenas no `console.error`; não expor nomes internos de constraints/RPCs ao usuário.
+- **Banco:** esta versão não altera schema, políticas nem RPCs. SQL adicional: NÃO.

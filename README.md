@@ -1,4 +1,4 @@
-# TAGES CONSULTORIA ANNA — v2.0.11
+# TAGES CONSULTORIA ANNA — v2.0.12
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 
@@ -55,7 +55,7 @@ Em uma instalação **nova e vazia**, execute uma única vez:
 
 `supabase/migrations/202609220001_initial_schema.sql`
 
-Em produção já existente, **não reexecute a migration inicial**. Atualizações posteriores devem usar apenas o SQL incremental explicitamente indicado na versão correspondente. A v2.0.11 não exige SQL adicional.
+Em produção já existente, **não reexecute a migration inicial**. Atualizações posteriores devem usar apenas o SQL incremental explicitamente indicado na versão correspondente. A v2.0.12 não exige SQL adicional.
 
 Essa é a migração corrigida após o erro PostgreSQL `42P17` ocorrido na implantação anterior.
 
