@@ -80,6 +80,13 @@ export type AppSettingsRow = {
   vault_salt: string | null;
   vault_verifier_ciphertext: string | null;
   vault_verifier_iv: string | null;
+  vault_version: number | null;
+  vault_password_salt: string | null;
+  vault_password_key_ciphertext: string | null;
+  vault_password_key_iv: string | null;
+  vault_recovery_salt: string | null;
+  vault_recovery_key_ciphertext: string | null;
+  vault_recovery_key_iv: string | null;
   service_catalog: ServiceCatalogItem[];
 };
 

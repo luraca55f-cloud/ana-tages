@@ -1,24 +1,21 @@
-ANA TAGES v2.0.13 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.14 — RELATÓRIO DE VALIDAÇÃO
 
 Base:
-- ANA TAGES v2.0.11 limpa.
+- ANA TAGES v2.0.13 limpa.
 
-Alteração:
-- Modal de atendimento informa o motivo real quando o cadastro é bloqueado.
-- Validação local identifica paciente/cliente, data/hora, serviço, duração e valor inválidos.
-- Erros do banco são traduzidos para mensagens específicas de conflito de agenda, MFA/permissão, regra de dados e conexão.
-- Falha de recebimento após salvar o atendimento é diferenciada de falha do cadastro.
+Alterações:
+- Recuperação de senha do login por e-mail via Supabase Auth.
+- Cofre clínico v3 recuperável por código separado.
+- Migração compatível do cofre legado v2 no primeiro desbloqueio bem-sucedido.
+- Removido requisito mínimo de caracteres da senha do cofre.
+- Notas clínicas continuam usando a mesma chave de conteúdo; redefinir senha não apaga prontuários.
 
 SQL:
-- NÃO. A v2.0.13 não exige alteração no Supabase.
+- SIM: executar somente SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql no banco existente.
+- NÃO reexecutar a migration inicial.
 
 Validações executadas:
 - verify-project.mjs
+- transpilação sintática TypeScript/TSX dos arquivos alterados
 - busca por marcadores de conflito Git
-- busca por pasta GIT duplicada
-- checagem sintática TypeScript/TSX quando disponível no ambiente
-
-Favicon e título:
-- favicon.ico substituído pela identidade visual fornecida;
-- favicon.png adicionado para navegadores modernos;
-- título da aba: TAGES | Consultório Anna.
+- ausência de pasta GIT duplicada

@@ -43,3 +43,13 @@ Se futuramente for criado um lockfile novo a partir desta árvore limpa e ele fo
 - observability/logs
 
 O wrapper adiciona cabeçalhos de segurança e limitação de requisições sem mudar a interface do sistema.
+
+## Atualização v2.0.14 — ordem recomendada
+
+Antes de publicar a v2.0.14 no Cloudflare, execute no Supabase **somente**:
+
+`SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql`
+
+Isso adiciona os campos necessários ao cofre recuperável. Não reexecute a migration inicial no banco atual.
+
+Para o link de recuperação da senha de login funcionar no domínio publicado, confirme em **Supabase Auth > URL Configuration** que o domínio atual do ANA TAGES está definido como Site URL ou permitido em Redirect URLs.

@@ -39,7 +39,19 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Button } from "../components/ui/button";
 import { AuthGate, useAuth } from "../components/auth/AuthGate";
 import { FinanceDashboardMetrics, FinancePage as FinancePageV2 } from "../features/finance/FinancePage";
-import { clinicalAad, createVaultVerifier, decryptText, encryptText, isStrongVaultPassphrase, unlockVault } from "../features/clinic/crypto";
+import {
+  clinicalAad,
+  createPasswordEnvelope,
+  createRecoverableEnvelopeForExistingKey,
+  createRecoverableVault,
+  createRecoveryEnvelope,
+  decryptText,
+  encryptText,
+  isValidVaultPassphrase,
+  recoverVaultWithCode,
+  unlockLegacyVault,
+  unlockRecoverableVault,
+} from "../features/clinic/crypto";
 import {
   createAppointment,
   createClinicalNote,
@@ -84,7 +96,7 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Consultório | Anna Karina Dias" },
+      { title: "TAGES | Consultório Anna" },
       { name: "description", content: "Gestão segura de pacientes, agenda, sessões, financeiro, relatórios e materiais." },
       { name: "robots", content: "noindex,nofollow,noarchive,nosnippet" },
     ],
@@ -356,7 +368,7 @@ function ConsultorioApp() {
       </div>
 
       {patientModal && <PatientModal patient={patientModal === "new" ? null : patientModal} services={availableServices(settings)} onClose={() => setPatientModal(null)} onSaved={async () => { setPatientModal(null); await refreshCore(); }} />}
-      {recordPatient && <TwoFactorModal patient={recordPatient} settings={settings} vaultKey={vaultKey} onVaultKey={setVaultKey} onClose={() => setRecordPatient(null)} onVerified={() => { setVerifiedPatient(recordPatient); setRecordPatient(null); }} />}
+      {recordPatient && <TwoFactorModal patient={recordPatient} settings={settings} vaultKey={vaultKey} onVaultKey={setVaultKey} onSettings={setSettings} onRecover={() => { setRecordPatient(null); setActiveModule("Configurações"); }} onClose={() => setRecordPatient(null)} onVerified={() => { setVerifiedPatient(recordPatient); setRecordPatient(null); }} />}
       {verifiedPatient && vaultKey && <PatientRecordModal patient={verifiedPatient} vaultKey={vaultKey} onClose={() => setVerifiedPatient(null)} />}
     </div>
   );
@@ -784,21 +796,183 @@ function MfaSettings() {
 }
 
 function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey | null) => void; onSettings: (s: AppSettingsRow) => void }) {
-  const configured = Boolean(settings?.vault_salt && settings?.vault_verifier_ciphertext && settings?.vault_verifier_iv);
-  const [pass, setPass] = useState(""); const [confirmPass, setConfirmPass] = useState(""); const [message, setMessage] = useState("");
+  const legacyConfigured = Boolean(settings?.vault_salt && settings?.vault_verifier_ciphertext && settings?.vault_verifier_iv);
+  const recoverableConfigured = Boolean(
+    settings?.vault_version === 3
+    && settings.vault_password_salt
+    && settings.vault_password_key_ciphertext
+    && settings.vault_password_key_iv
+    && settings.vault_recovery_salt
+    && settings.vault_recovery_key_ciphertext
+    && settings.vault_recovery_key_iv,
+  );
+  const configured = recoverableConfigured || legacyConfigured;
+  const [pass, setPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [message, setMessage] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [confirmNewPass, setConfirmNewPass] = useState("");
+
+  const saveRecoverableSettings = async (created: {
+    password: { salt: string; ciphertext: string; iv: string };
+    recovery: { salt: string; ciphertext: string; iv: string };
+  }) => saveAppSettings({
+    vault_version: 3,
+    vault_salt: null,
+    vault_verifier_ciphertext: null,
+    vault_verifier_iv: null,
+    vault_password_salt: created.password.salt,
+    vault_password_key_ciphertext: created.password.ciphertext,
+    vault_password_key_iv: created.password.iv,
+    vault_recovery_salt: created.recovery.salt,
+    vault_recovery_key_ciphertext: created.recovery.ciphertext,
+    vault_recovery_key_iv: created.recovery.iv,
+  });
+
   const setup = async () => {
-    if (!isStrongVaultPassphrase(pass) || pass !== confirmPass) { setMessage("Use uma senha com pelo menos 16 caracteres, combinando pelo menos 3 grupos: maiúsculas, minúsculas, números e símbolos."); return; }
-    const created = await createVaultVerifier(pass);
-    const saved = await saveAppSettings({ vault_salt: created.salt, vault_verifier_ciphertext: created.ciphertext, vault_verifier_iv: created.iv });
-    onSettings(saved); onVaultKey(created.key); setPass(""); setConfirmPass(""); setMessage("Cofre criado. Guarde essa senha em local seguro: ela não pode ser recuperada pelo sistema.");
+    if (!isValidVaultPassphrase(pass) || pass !== confirmPass) {
+      setMessage(!pass ? "Informe uma senha para o cofre." : "As senhas informadas não coincidem.");
+      return;
+    }
+    try {
+      const created = await createRecoverableVault(pass);
+      const saved = await saveRecoverableSettings(created);
+      onSettings(saved);
+      onVaultKey(created.key);
+      setRecoveryCode(created.recoveryCode);
+      setPass("");
+      setConfirmPass("");
+      setMessage("Cofre criado. Guarde o código de recuperação abaixo em local seguro.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível criar o cofre.");
+    }
   };
+
   const unlock = async () => {
-    if (!settings?.vault_salt || !settings.vault_verifier_ciphertext || !settings.vault_verifier_iv) return;
-    const key = await unlockVault(pass, settings.vault_salt, settings.vault_verifier_ciphertext, settings.vault_verifier_iv);
-    if (!key) { setMessage("Senha do cofre incorreta."); return; }
-    onVaultKey(key); setPass(""); setMessage("Cofre desbloqueado nesta sessão.");
+    if (!settings) return;
+    try {
+      let key: CryptoKey | null = null;
+      if (recoverableConfigured && settings.vault_password_salt && settings.vault_password_key_ciphertext && settings.vault_password_key_iv) {
+        key = await unlockRecoverableVault(pass, {
+          salt: settings.vault_password_salt,
+          ciphertext: settings.vault_password_key_ciphertext,
+          iv: settings.vault_password_key_iv,
+        });
+      } else if (legacyConfigured && settings.vault_salt && settings.vault_verifier_ciphertext && settings.vault_verifier_iv) {
+        key = await unlockLegacyVault(pass, settings.vault_salt, settings.vault_verifier_ciphertext, settings.vault_verifier_iv);
+        if (key) {
+          // Migração v2 -> v3: preserva a MESMA chave que já cifra as evoluções e apenas
+          // passa a encapsulá-la pela senha + código de recuperação. Nenhum prontuário é recriptografado.
+          const upgraded = await createRecoverableEnvelopeForExistingKey(pass, key);
+          const saved = await saveRecoverableSettings(upgraded);
+          onSettings(saved);
+          setRecoveryCode(upgraded.recoveryCode);
+          setMessage("Cofre atualizado para permitir recuperação. Guarde o código de recuperação abaixo.");
+        }
+      }
+      if (!key) {
+        setMessage("Senha do cofre incorreta.");
+        return;
+      }
+      onVaultKey(key);
+      setPass("");
+      if (!recoveryCode) setMessage("Cofre desbloqueado nesta sessão.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível desbloquear o cofre.");
+    }
   };
-  return <SettingsCard title="Cofre clínico criptografado" description="A senha do cofre existe somente com a Anna e não é armazenada no sistema.">{configured ? <div>{vaultKey ? <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary"><Check className="mr-2 inline size-4" /> Cofre desbloqueado nesta sessão</div> : <div className="flex gap-2"><input type="password" autoComplete="off" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" /><Button variant="dashboard" onClick={() => void unlock()}>Desbloquear</Button></div>}</div> : <div className="space-y-3"><input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Crie uma senha forte (mín. 16 caracteres)" /><input type="password" autoComplete="new-password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a senha" /><Button variant="dashboard" onClick={() => void setup()}>Criar cofre clínico</Button><p className="text-[10px] leading-4 text-destructive">Atenção: se esta senha for perdida, as evoluções criptografadas não poderão ser recuperadas.</p></div>}{message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}</SettingsCard>;
+
+  const recover = async () => {
+    if (!settings?.vault_recovery_salt || !settings.vault_recovery_key_ciphertext || !settings.vault_recovery_key_iv) {
+      setMessage("A recuperação ainda não foi configurada para este cofre. Desbloqueie com a senha atual para ativá-la.");
+      return;
+    }
+    if (!recoveryInput.trim() || !newPass || newPass !== confirmNewPass) {
+      setMessage(!recoveryInput.trim() ? "Informe o código de recuperação." : !newPass ? "Informe a nova senha do cofre." : "As novas senhas não coincidem.");
+      return;
+    }
+    const key = await recoverVaultWithCode(recoveryInput, {
+      salt: settings.vault_recovery_salt,
+      ciphertext: settings.vault_recovery_key_ciphertext,
+      iv: settings.vault_recovery_key_iv,
+    });
+    if (!key) {
+      setMessage("Código de recuperação inválido.");
+      return;
+    }
+    try {
+      const passwordEnvelope = await createPasswordEnvelope(key, newPass);
+      const saved = await saveAppSettings({
+        vault_version: 3,
+        vault_password_salt: passwordEnvelope.salt,
+        vault_password_key_ciphertext: passwordEnvelope.ciphertext,
+        vault_password_key_iv: passwordEnvelope.iv,
+      });
+      onSettings(saved);
+      onVaultKey(key);
+      setRecoveryInput("");
+      setNewPass("");
+      setConfirmNewPass("");
+      setRecovering(false);
+      setMessage("Senha do cofre redefinida com sucesso. As evoluções existentes foram preservadas.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível redefinir a senha do cofre.");
+    }
+  };
+
+  const regenerateRecovery = async () => {
+    if (!vaultKey) return;
+    try {
+      const generated = await createRecoveryEnvelope(vaultKey);
+      const saved = await saveAppSettings({
+        vault_version: 3,
+        vault_recovery_salt: generated.recovery.salt,
+        vault_recovery_key_ciphertext: generated.recovery.ciphertext,
+        vault_recovery_key_iv: generated.recovery.iv,
+      });
+      onSettings(saved);
+      setRecoveryCode(generated.recoveryCode);
+      setMessage("Novo código de recuperação gerado. O código anterior deixou de funcionar.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível gerar um novo código de recuperação.");
+    }
+  };
+
+  return (
+    <SettingsCard title="Cofre clínico criptografado" description="A senha não é armazenada no sistema. A recuperação do cofre utiliza um código separado, conhecido somente por quem o guardar.">
+      {!configured ? (
+        <div className="space-y-3">
+          <input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Crie uma senha para o cofre" />
+          <input type="password" autoComplete="new-password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a senha" />
+          <p className="text-[10px] leading-4 text-muted-foreground">Não há requisito mínimo de caracteres. Para maior segurança, prefira uma senha difícil de adivinhar.</p>
+          <Button variant="dashboard" onClick={() => void setup()}>Criar cofre clínico</Button>
+        </div>
+      ) : recovering ? (
+        <div className="space-y-3">
+          <p className="text-xs leading-5 text-muted-foreground">Informe o código de recuperação salvo anteriormente e defina uma nova senha. O conteúdo clínico permanecerá criptografado.</p>
+          <input value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value.toUpperCase())} className="h-10 w-full rounded-xl border border-border bg-background px-3 font-mono text-sm" placeholder="Código de recuperação" autoComplete="off" />
+          <input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Nova senha do cofre" autoComplete="new-password" />
+          <input type="password" value={confirmNewPass} onChange={(e) => setConfirmNewPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a nova senha" autoComplete="new-password" />
+          <div className="flex flex-wrap gap-2"><Button variant="dashboard" onClick={() => void recover()}>Redefinir senha do cofre</Button><Button variant="ghost" onClick={() => setRecovering(false)}>Cancelar</Button></div>
+        </div>
+      ) : vaultKey ? (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary"><Check className="mr-2 inline size-4" /> Cofre desbloqueado nesta sessão</div>
+          <Button variant="quiet" size="sm" onClick={() => void regenerateRecovery()}>Gerar novo código de recuperação</Button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex gap-2"><input type="password" autoComplete="off" value={pass} onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void unlock(); }} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" /><Button variant="dashboard" onClick={() => void unlock()}>Desbloquear</Button></div>
+          <button type="button" className="text-xs font-medium text-primary underline-offset-4 hover:underline" onClick={() => { setRecovering(true); setMessage(""); }}>Esqueci a senha do cofre</button>
+        </div>
+      )}
+      {recoveryCode && <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Código de recuperação do cofre</p><p className="mt-2 break-all font-mono text-sm font-semibold text-foreground">{recoveryCode}</p><div className="mt-3 flex flex-wrap items-center gap-2"><Button variant="quiet" size="sm" onClick={() => { void navigator.clipboard.writeText(recoveryCode); }}>Copiar código</Button><span className="text-[10px] leading-4 text-muted-foreground">Guarde fora do sistema. Ele permite redefinir a senha sem perder as evoluções.</span></div></div>}
+      {message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}
+    </SettingsCard>
+  );
 }
 
 function PatientModal({ patient, services, onClose, onSaved }: { patient: PatientRow | null; services: ServiceCatalogItem[]; onClose: () => void; onSaved: () => Promise<void> }) {
@@ -1083,13 +1257,22 @@ function MaterialModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
   return <ModalShell onClose={onClose}><ModalHeader title="Adicionar material" subtitle="Arquivo privado, com tipo e tamanho validados antes do envio." onClose={onClose} /><div className="space-y-4 p-5"><input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" onChange={(e)=>{const f=e.target.files?.[0]??null;setFile(f);setError("");if(f&&!title)setTitle(f.name.replace(/\.[^.]+$/, "").slice(0,180));}} className="w-full rounded-xl border border-border bg-background p-3 text-xs" /><p className="text-[10px] text-muted-foreground">Permitidos: PDF, PNG, JPG/JPEG e WEBP • máximo 10 MB.</p><FieldEdit label="Título" value={title} onChange={(value)=>setTitle(value.slice(0,180))} /><FieldEdit label="Categoria" value={category} onChange={(value)=>setCategory(value.slice(0,100))} /><FieldEdit label="Observação" value={notes} onChange={(value)=>setNotes(value.slice(0,2000))} />{error&&<p className="text-xs text-destructive">{error}</p>}<div className="flex justify-end gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={!file || !title.trim() || saving} onClick={()=>void save()}>{saving?"Enviando...":"Enviar arquivo"}</Button></div></div></ModalShell>;
 }
 
-function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onClose, onVerified }: { patient: PatientView; settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey) => void; onClose: () => void; onVerified: () => void }) {
-  const [phase, setPhase] = useState<"checking"|"totp"|"vault"|"blocked">("checking");
+function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onSettings, onRecover, onClose, onVerified }: { patient: PatientView; settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey) => void; onSettings: (s: AppSettingsRow) => void; onRecover: () => void; onClose: () => void; onVerified: () => void }) {
+  const [phase, setPhase] = useState<"checking"|"totp"|"vault"|"recovery"|"blocked">("checking");
   const [factorId, setFactorId] = useState("");
   const [code, setCode] = useState("");
   const [pass, setPass] = useState("");
   const [error, setError] = useState("");
   const [granted, setGranted] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState("");
+
+  const legacyConfigured = Boolean(settings?.vault_salt && settings?.vault_verifier_ciphertext && settings?.vault_verifier_iv);
+  const recoverableConfigured = Boolean(
+    settings?.vault_version === 3
+    && settings.vault_password_salt
+    && settings.vault_password_key_ciphertext
+    && settings.vault_password_key_iv,
+  );
 
   useEffect(()=>{(async()=>{
     if(!supabase){setPhase("blocked");setError("Serviço de dados indisponível.");return;}
@@ -1097,17 +1280,22 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onClose, onVe
     if(error){setPhase("blocked");setError("Não foi possível verificar o autenticador.");return;}
     const factor=data.totp.find((x)=>x.status==="verified");
     if(!factor){setPhase("blocked");setError("Configure o Google Authenticator em Configurações antes de abrir prontuários.");return;}
-    if(!settings?.vault_salt||!settings.vault_verifier_ciphertext||!settings.vault_verifier_iv){setPhase("blocked");setError("Crie o cofre clínico em Configurações antes de abrir prontuários.");return;}
+    if(!legacyConfigured&&!recoverableConfigured){setPhase("blocked");setError("Crie o cofre clínico em Configurações antes de abrir prontuários.");return;}
     setFactorId(factor.id);setPhase("totp");
-  })();},[settings]);
+  })();},[legacyConfigured,recoverableConfigured]);
 
   const closeSecure=()=>{
     if(granted) void revokeClinicalAccess(patient.id).catch(()=>undefined);
     onClose();
   };
 
+  const goToRecovery=()=>{
+    if(granted) void revokeClinicalAccess(patient.id).catch(()=>undefined);
+    onRecover();
+  };
+
   const verifyTotp=async()=>{
-    if(!supabase||!factorId||!/^\d{6}$/.test(code)){setError("Informe o código de 6 dígitos.");return;}
+    if(!supabase||!factorId||!/^[0-9]{6}$/.test(code)){setError("Informe o código de 6 dígitos.");return;}
     setError("");
     const {error:ve}=await supabase.auth.mfa.challengeAndVerify({factorId,code});
     setCode("");
@@ -1126,14 +1314,48 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onClose, onVe
   };
 
   const unlock=async()=>{
-    if(!settings?.vault_salt||!settings.vault_verifier_ciphertext||!settings.vault_verifier_iv)return;
-    const key=await unlockVault(pass,settings.vault_salt,settings.vault_verifier_ciphertext,settings.vault_verifier_iv);
+    if(!settings)return;
+    const currentPass=pass;
+    setError("");
+    let key: CryptoKey | null = null;
+    if(recoverableConfigured && settings.vault_password_salt && settings.vault_password_key_ciphertext && settings.vault_password_key_iv){
+      key=await unlockRecoverableVault(currentPass,{salt:settings.vault_password_salt,ciphertext:settings.vault_password_key_ciphertext,iv:settings.vault_password_key_iv});
+    } else if(legacyConfigured && settings.vault_salt && settings.vault_verifier_ciphertext && settings.vault_verifier_iv){
+      key=await unlockLegacyVault(currentPass,settings.vault_salt,settings.vault_verifier_ciphertext,settings.vault_verifier_iv);
+    }
     setPass("");
     if(!key){setError("Senha do cofre incorreta.");return;}
-    onVaultKey(key);onVerified();
+    onVaultKey(key);
+
+    if(!recoverableConfigured && legacyConfigured){
+      try{
+        // Migra o cofre antigo no primeiro desbloqueio bem-sucedido, sem alterar a chave
+        // que já cifra as evoluções. O código exibido abaixo é a única via de recuperação.
+        const upgraded=await createRecoverableEnvelopeForExistingKey(currentPass,key);
+        const saved=await saveAppSettings({
+          vault_version:3,
+          vault_salt:null,
+          vault_verifier_ciphertext:null,
+          vault_verifier_iv:null,
+          vault_password_salt:upgraded.password.salt,
+          vault_password_key_ciphertext:upgraded.password.ciphertext,
+          vault_password_key_iv:upgraded.password.iv,
+          vault_recovery_salt:upgraded.recovery.salt,
+          vault_recovery_key_ciphertext:upgraded.recovery.ciphertext,
+          vault_recovery_key_iv:upgraded.recovery.iv,
+        });
+        onSettings(saved);
+        setRecoveryCode(upgraded.recoveryCode);
+        setPhase("recovery");
+        return;
+      }catch{
+        // Falha na migração não impede o acesso ao prontuário legado.
+      }
+    }
+    onVerified();
   };
 
-  return <ModalShell onClose={closeSecure}><div className="p-6"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span><Button variant="ghost" size="icon" onClick={closeSecure}><X /></Button></div><h2 className="mt-5 font-display text-xl">Prontuário — {patient.full_name}</h2>{phase==="checking"&&<p className="mt-3 text-sm text-muted-foreground">Verificando proteção...</p>}{phase==="blocked"&&<div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive">{error}</div>}{phase==="totp"&&<><p className="mt-2 text-sm text-muted-foreground">Digite o código atual do Google Authenticator. Cada abertura exige uma nova verificação.</p><input autoFocus inputMode="numeric" maxLength={6} value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} onKeyDown={(e)=>{if(e.key==="Enter")void verifyTotp();}} className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]" placeholder="000000" /><Button variant="dashboard" className="mt-4 w-full" disabled={code.length!==6} onClick={()=>void verifyTotp()}>Verificar código</Button></>}{phase==="vault"&&<><p className="mt-2 text-sm text-muted-foreground">Desbloqueie o cofre clínico. A senha permanece somente na memória desta aba e não é enviada ao servidor.</p><input autoFocus type="password" value={pass} onChange={(e)=>setPass(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter")void unlock();}} className="mt-5 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" autoComplete="off" /><Button variant="dashboard" className="mt-4 w-full" disabled={!pass} onClick={()=>void unlock()}>Desbloquear cofre</Button></>}{error&&phase!=="blocked"&&<p className="mt-3 text-xs text-destructive">{error}</p>}</div></ModalShell>;
+  return <ModalShell onClose={closeSecure}><div className="p-6"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span><Button variant="ghost" size="icon" onClick={closeSecure}><X /></Button></div><h2 className="mt-5 font-display text-xl">Prontuário — {patient.full_name}</h2>{phase==="checking"&&<p className="mt-3 text-sm text-muted-foreground">Verificando proteção...</p>}{phase==="blocked"&&<div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive">{error}</div>}{phase==="totp"&&<><p className="mt-2 text-sm text-muted-foreground">Digite o código atual do Google Authenticator. Cada abertura exige uma nova verificação.</p><input autoFocus inputMode="numeric" maxLength={6} value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} onKeyDown={(e)=>{if(e.key==="Enter")void verifyTotp();}} className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]" placeholder="000000" /><Button variant="dashboard" className="mt-4 w-full" disabled={code.length!==6} onClick={()=>void verifyTotp()}>Verificar código</Button></>}{phase==="vault"&&<><p className="mt-2 text-sm text-muted-foreground">Desbloqueie o cofre clínico. A senha permanece somente na memória desta aba e não é enviada ao servidor.</p><input autoFocus type="password" value={pass} onChange={(e)=>setPass(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter")void unlock();}} className="mt-5 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" autoComplete="off" /><Button variant="dashboard" className="mt-4 w-full" disabled={!pass} onClick={()=>void unlock()}>Desbloquear cofre</Button><Button variant="ghost" className="mt-2 w-full" onClick={goToRecovery}>Esqueci a senha do cofre</Button></>}{phase==="recovery"&&<><p className="mt-2 text-sm text-muted-foreground">O cofre foi atualizado para permitir redefinição de senha. Guarde este código fora do sistema antes de continuar.</p><div className="mt-4 rounded-xl border border-border bg-muted/40 p-4"><p className="break-all font-mono text-sm font-semibold">{recoveryCode}</p><Button variant="quiet" size="sm" className="mt-3" onClick={()=>{void navigator.clipboard.writeText(recoveryCode);}}>Copiar código</Button></div><Button variant="dashboard" className="mt-4 w-full" onClick={onVerified}>Já guardei, abrir prontuário</Button></>}{error&&phase!=="blocked"&&<p className="mt-3 text-xs text-destructive">{error}</p>}</div></ModalShell>;
 }
 
 function PatientRecordModal({ patient, vaultKey, onClose }: { patient: PatientView; vaultKey: CryptoKey; onClose: () => void }) {

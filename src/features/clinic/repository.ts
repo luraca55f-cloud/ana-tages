@@ -368,7 +368,7 @@ export async function getAppSettings() {
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
-  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,service_catalog";
+  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
   const { data, error } = await client.from("app_settings").select(fields).eq("owner_id", userData.user.id).maybeSingle();
   if (error) throw error;
   if (data) return data as AppSettingsRow;
@@ -389,8 +389,15 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
   if (patch.vault_salt !== undefined) allowed["vault_salt"] = patch.vault_salt;
   if (patch.vault_verifier_ciphertext !== undefined) allowed["vault_verifier_ciphertext"] = patch.vault_verifier_ciphertext;
   if (patch.vault_verifier_iv !== undefined) allowed["vault_verifier_iv"] = patch.vault_verifier_iv;
+  if (patch.vault_version !== undefined) allowed["vault_version"] = patch.vault_version;
+  if (patch.vault_password_salt !== undefined) allowed["vault_password_salt"] = patch.vault_password_salt;
+  if (patch.vault_password_key_ciphertext !== undefined) allowed["vault_password_key_ciphertext"] = patch.vault_password_key_ciphertext;
+  if (patch.vault_password_key_iv !== undefined) allowed["vault_password_key_iv"] = patch.vault_password_key_iv;
+  if (patch.vault_recovery_salt !== undefined) allowed["vault_recovery_salt"] = patch.vault_recovery_salt;
+  if (patch.vault_recovery_key_ciphertext !== undefined) allowed["vault_recovery_key_ciphertext"] = patch.vault_recovery_key_ciphertext;
+  if (patch.vault_recovery_key_iv !== undefined) allowed["vault_recovery_key_iv"] = patch.vault_recovery_key_iv;
   if (patch.service_catalog !== undefined) allowed["service_catalog"] = cleanServiceCatalog(patch.service_catalog);
-  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,service_catalog";
+  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
   const { data, error } = await client.from("app_settings").upsert(allowed, { onConflict: "owner_id" }).select(fields).single();
   if (error) throw error;
   return data as AppSettingsRow;

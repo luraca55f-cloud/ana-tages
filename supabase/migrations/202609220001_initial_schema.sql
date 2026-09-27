@@ -222,6 +222,14 @@ create table if not exists public.app_settings (
   vault_salt text check (vault_salt is null or char_length(vault_salt) <= 256),
   vault_verifier_ciphertext text check (vault_verifier_ciphertext is null or char_length(vault_verifier_ciphertext) <= 4096),
   vault_verifier_iv text check (vault_verifier_iv is null or char_length(vault_verifier_iv) <= 256),
+  -- v3 usa envelope encryption: a chave clínica é encapsulada pela senha e por um código de recuperação.
+  vault_version smallint not null default 2 check (vault_version in (2, 3)),
+  vault_password_salt text check (vault_password_salt is null or char_length(vault_password_salt) <= 256),
+  vault_password_key_ciphertext text check (vault_password_key_ciphertext is null or char_length(vault_password_key_ciphertext) <= 4096),
+  vault_password_key_iv text check (vault_password_key_iv is null or char_length(vault_password_key_iv) <= 256),
+  vault_recovery_salt text check (vault_recovery_salt is null or char_length(vault_recovery_salt) <= 256),
+  vault_recovery_key_ciphertext text check (vault_recovery_key_ciphertext is null or char_length(vault_recovery_key_ciphertext) <= 4096),
+  vault_recovery_key_iv text check (vault_recovery_key_iv is null or char_length(vault_recovery_key_iv) <= 256),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -851,8 +859,8 @@ grant insert (client_request_id, title, category, file_path, file_type, notes) o
 grant update (title, category, notes) on public.materials to authenticated;
 
 grant select on public.app_settings to authenticated;
-grant insert (owner_id, professional_name, crp, phone, email, vault_salt, vault_verifier_ciphertext, vault_verifier_iv) on public.app_settings to authenticated;
-grant update (professional_name, crp, phone, email, vault_salt, vault_verifier_ciphertext, vault_verifier_iv) on public.app_settings to authenticated;
+grant insert (owner_id, professional_name, crp, phone, email, vault_salt, vault_verifier_ciphertext, vault_verifier_iv, vault_version, vault_password_salt, vault_password_key_ciphertext, vault_password_key_iv, vault_recovery_salt, vault_recovery_key_ciphertext, vault_recovery_key_iv) on public.app_settings to authenticated;
+grant update (professional_name, crp, phone, email, vault_salt, vault_verifier_ciphertext, vault_verifier_iv, vault_version, vault_password_salt, vault_password_key_ciphertext, vault_password_key_iv, vault_recovery_salt, vault_recovery_key_ciphertext, vault_recovery_key_iv) on public.app_settings to authenticated;
 grant select on public.audit_log to authenticated;
 revoke all on public.clinical_access_grants from authenticated;
 

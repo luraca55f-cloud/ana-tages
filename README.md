@@ -1,4 +1,4 @@
-# TAGES CONSULTORIA ANNA — v2.0.13
+# TAGES CONSULTORIA ANNA — v2.0.14
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 
@@ -55,7 +55,7 @@ Em uma instalação **nova e vazia**, execute uma única vez:
 
 `supabase/migrations/202609220001_initial_schema.sql`
 
-Em produção já existente, **não reexecute a migration inicial**. Atualizações posteriores devem usar apenas o SQL incremental explicitamente indicado na versão correspondente. A v2.0.13 não exige SQL adicional.
+Em produção já existente, **não reexecute a migration inicial**. Atualizações posteriores devem usar apenas o SQL incremental explicitamente indicado na versão correspondente. A v2.0.14 exige o SQL incremental `SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql` para habilitar a recuperação segura do cofre clínico.
 
 Essa é a migração corrigida após o erro PostgreSQL `42P17` ocorrido na implantação anterior.
 
@@ -105,3 +105,14 @@ Leia `AI_MAINTENANCE_NOTES.md` antes de alterar dependências, deploy, imports o
 - Título da aba alterado para `TAGES | Consultório Anna`.
 - O favicon usa versionamento na URL para evitar que navegadores mantenham o ícone anterior em cache.
 - SQL adicional: NÃO.
+
+
+## Atualização v2.0.14 — recuperação de acesso e cofre clínico
+
+- Login: a tela inicial possui `Esqueci minha senha`, usando o fluxo oficial de recuperação por e-mail do Supabase Auth.
+- Cofre clínico: a senha deixa de ser irrecuperável. A chave clínica é encapsulada separadamente pela senha e por um código de recuperação.
+- Recuperar o cofre redefine a senha sem apagar nem recriptografar as evoluções existentes.
+- O código de recuperação deve ser guardado fora do sistema; o banco armazena somente a chave clínica encapsulada, nunca o código em texto.
+- Cofres legados v2 são migrados no primeiro desbloqueio bem-sucedido, preservando a mesma chave usada nas evoluções antigas.
+- A senha do cofre não possui requisito mínimo imposto pela aplicação; continua recomendado usar uma senha difícil de adivinhar.
+- SQL atual: `SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql`. Não reexecute a migration inicial em produção.

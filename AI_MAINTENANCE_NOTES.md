@@ -139,3 +139,15 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Favicon oficial:** `public/favicon.ico` e `public/favicon.png` derivam do símbolo fornecido pelo usuário nesta versão. Não substituir por favicon genérico sem solicitação.
 - **Cache:** os links do favicon usam `?v=2.0.13`; ao trocar novamente o ícone, incrementar o identificador de cache.
 - **Banco:** esta alteração é somente de interface/metadados. SQL adicional: NÃO.
+
+
+## Atualização v2.0.14 — recuperação de senha e cofre recuperável
+
+- **Login:** preservar o botão `Esqueci minha senha` em `AuthGate.tsx`. A recuperação deve usar `supabase.auth.resetPasswordForEmail()` e a troca efetiva deve ocorrer no evento `PASSWORD_RECOVERY` com `updateUser({ password })`. Depois da troca, encerrar a sessão e exigir login + MFA normalmente.
+- **Cofre v3:** nunca armazenar a senha do cofre nem o código de recuperação. As evoluções continuam cifradas por uma chave AES-GCM de conteúdo; essa chave é encapsulada uma vez pela senha e outra vez pelo código de recuperação.
+- **Recuperação:** `Esqueci a senha do cofre` deve desembrulhar a mesma chave clínica com o código de recuperação e trocar apenas o envelope da senha. Não apagar/recriptografar prontuários para redefinir senha.
+- **Legado v2:** ao desbloquear um cofre antigo com sucesso, preservar exatamente a chave antiga e migrá-la para envelopes v3. Exibir o novo código de recuperação uma única vez para a profissional guardar.
+- **Sem requisito mínimo:** o cofre aceita qualquer senha não vazia por decisão explícita do usuário. Não reintroduzir mínimo de caracteres sem nova solicitação.
+- **Privacidade:** a recuperação do cofre usa código externo justamente para preservar a premissa de que quem administra o banco/código não recebe uma chave de recuperação legível. Não trocar por escrow de chave no servidor sem discutir a mudança de garantia.
+- **SQL:** aplicar apenas `SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql` no banco existente.
+- **Escopo:** ANA TAGES é sistema interno do consultório. Não implementar portal de paciente, link público ou autoagendamento sem solicitação explícita.

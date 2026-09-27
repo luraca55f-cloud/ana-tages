@@ -74,6 +74,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "forgot" | "reset">("login");
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
@@ -127,11 +130,22 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setLoading(false);
       if (currentUser) await resolveMfa();
     });
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       setUser(session?.user ?? null);
       setLoading(false);
-      if (!session) setMfaStage("checking");
+      if (event === "PASSWORD_RECOVERY") {
+        // O link enviado pelo Supabase cria uma sessão temporária apenas para a troca da senha.
+        // Interceptamos esse evento antes do MFA para que a profissional consiga definir a nova senha.
+        setAuthMode("reset");
+        setError("");
+        setNotice("");
+        return;
+      }
+      if (!session) {
+        setMfaStage("checking");
+        setAuthMode((current) => current === "reset" ? "login" : current);
+      }
     });
     return () => {
       active = false;
@@ -193,7 +207,62 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
+  if (isSupabaseConfigured && user && authMode === "reset") {
+    const saveNewPassword = async () => {
+      if (!supabase || !password || password !== confirmPassword) {
+        setError("Informe a nova senha e repita exatamente o mesmo valor.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      setNotice("");
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      if (updateError) {
+        setError(updateError.message || "Não foi possível atualizar a senha.");
+        setSubmitting(false);
+        return;
+      }
+      await supabase.auth.signOut({ scope: "local" });
+      setPassword("");
+      setConfirmPassword("");
+      setAuthMode("login");
+      setNotice("Senha alterada. Entre novamente com a nova senha.");
+      setSubmitting(false);
+    };
+
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+        <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
+          <span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span>
+          <h1 className="mt-5 font-display text-2xl">Definir nova senha</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Crie uma nova senha de acesso. Depois, faça login normalmente e confirme o Google Authenticator.</p>
+          <div className="mt-6 space-y-4">
+            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Nova senha</span><input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
+            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Repita a nova senha</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveNewPassword(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
+          </div>
+          {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+          <Button variant="dashboard" className="mt-6 w-full" onClick={() => void saveNewPassword()} disabled={submitting || !password || !confirmPassword}>{submitting ? "Salvando..." : "Salvar nova senha"}</Button>
+        </section>
+      </main>
+    );
+  }
+
   if (isSupabaseConfigured && !user) {
+    const requestPasswordReset = async () => {
+      if (!supabase || !email.trim()) {
+        setError("Informe o e-mail de acesso.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      setNotice("");
+      const redirectTo = `${window.location.origin}${window.location.pathname}`;
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+      if (resetError) setError(resetError.message || "Não foi possível enviar o e-mail de recuperação.");
+      else setNotice("E-mail de recuperação enviado. Abra o link recebido para definir uma nova senha.");
+      setSubmitting(false);
+    };
+
     const login = async () => {
       if (!supabase || !email.trim() || !password) return;
       if (Date.now() < blockedUntil.current) {
@@ -226,6 +295,23 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setSubmitting(false);
     };
 
+    if (authMode === "forgot") {
+      return (
+        <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+          <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
+            <span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span>
+            <h1 className="mt-5 font-display text-2xl">Recuperar senha de acesso</h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Informe o e-mail usado no sistema. Você receberá um link seguro para criar uma nova senha.</p>
+            <label className="mt-6 block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">E-mail</span><input autoFocus value={email} onChange={(event) => setEmail(event.target.value.slice(0, 254))} onKeyDown={(event) => { if (event.key === "Enter") void requestPasswordReset(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="email" /></label>
+            {notice && <p className="mt-3 text-xs text-primary">{notice}</p>}
+            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+            <Button variant="dashboard" className="mt-6 w-full" onClick={() => void requestPasswordReset()} disabled={submitting || !email.trim()}>{submitting ? "Enviando..." : "Enviar link de recuperação"}</Button>
+            <Button variant="ghost" className="mt-2 w-full" onClick={() => { setAuthMode("login"); setError(""); setNotice(""); }}>Voltar ao login</Button>
+          </section>
+        </main>
+      );
+    }
+
     return (
       <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
         <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
@@ -236,7 +322,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">E-mail</span><input value={email} onChange={(event) => setEmail(event.target.value.slice(0, 254))} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="email" /></label>
             <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Senha</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void login(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="current-password" /></label>
           </div>
+          <button type="button" className="mt-3 text-xs font-medium text-primary underline-offset-4 hover:underline" onClick={() => { setAuthMode("forgot"); setError(""); setNotice(""); }}>Esqueci minha senha</button>
           <TurnstileWidget onToken={setCaptchaToken} />
+          {notice && <p className="mt-3 text-xs text-primary">{notice}</p>}
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
           <Button variant="dashboard" className="mt-6 w-full" onClick={() => void login()} disabled={submitting || !email.trim() || !password || Boolean(turnstileSiteKey && !captchaToken)}><LogIn /> {submitting ? "Entrando..." : "Entrar"}</Button>
         </section>
