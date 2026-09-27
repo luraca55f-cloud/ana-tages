@@ -143,7 +143,7 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 
 ## Atualização v2.0.14 — recuperação de senha e cofre recuperável
 
-- **Login:** preservar o botão `Esqueci minha senha` em `AuthGate.tsx`. A recuperação deve usar `supabase.auth.resetPasswordForEmail()` e a troca efetiva deve ocorrer no evento `PASSWORD_RECOVERY` com `updateUser({ password })`. Depois da troca, encerrar a sessão e exigir login + MFA normalmente.
+- **Login:** preservar o botão `Esqueci minha senha` em `AuthGate.tsx`. A recuperação usa `supabase.auth.resetPasswordForEmail()`. Em PKCE com `detectSessionInUrl: false`, o callback deve trocar explicitamente o `code` por sessão com `exchangeCodeForSession()`; `PASSWORD_RECOVERY` permanece como fallback/evento complementar. Depois da troca da senha com `updateUser({ password })`, encerrar a sessão e exigir login + MFA normalmente.
 - **Cofre v3:** nunca armazenar a senha do cofre nem o código de recuperação. As evoluções continuam cifradas por uma chave AES-GCM de conteúdo; essa chave é encapsulada uma vez pela senha e outra vez pelo código de recuperação.
 - **Recuperação:** `Esqueci a senha do cofre` deve desembrulhar a mesma chave clínica com o código de recuperação e trocar apenas o envelope da senha. Não apagar/recriptografar prontuários para redefinir senha.
 - **Legado v2:** ao desbloquear um cofre antigo com sucesso, preservar exatamente a chave antiga e migrá-la para envelopes v3. Exibir o novo código de recuperação uma única vez para a profissional guardar.
@@ -151,3 +151,23 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Privacidade:** a recuperação do cofre usa código externo justamente para preservar a premissa de que quem administra o banco/código não recebe uma chave de recuperação legível. Não trocar por escrow de chave no servidor sem discutir a mudança de garantia.
 - **SQL:** aplicar apenas `SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql` no banco existente.
 - **Escopo:** ANA TAGES é sistema interno do consultório. Não implementar portal de paciente, link público ou autoagendamento sem solicitação explícita.
+
+## Atualização v2.0.15 — callback de recuperação de senha PKCE
+
+- **Causa corrigida:** o cliente Supabase usa `flowType: pkce` e `detectSessionInUrl: false`; portanto, o `code` devolvido pelo link de recuperação não pode ser ignorado. O `AuthGate` deve chamar explicitamente `exchangeCodeForSession(code)` antes de mostrar `Definir nova senha`.
+- **Marcador explícito:** `resetPasswordForEmail()` usa `?mode=recovery` no `redirectTo`. Esse marcador diferencia recuperação de senha de uma abertura normal do sistema e evita depender exclusivamente do evento `PASSWORD_RECOVERY`.
+- **PKCE entre abas:** sessão normal continua em `sessionStorage`; somente a chave `code-verifier` do PKCE usa `localStorage`, para que o link aberto a partir do e-mail em outra aba consiga concluir a troca do código. O verifier é removido pelo fluxo após uso.
+- **MFA:** a sessão temporária de recuperação não deve ser desviada para a tela do Google Authenticator antes de a nova senha ser definida. Após `updateUser({ password })`, encerrar a sessão e exigir novo login + MFA.
+- **Erros:** link inválido/expirado deve voltar para a tela de solicitação de recuperação com mensagem clara, sem expor o `code` na interface.
+- **Banco:** nenhuma alteração de schema/RPC. SQL adicional: NÃO.
+
+## Atualização v2.0.16 — criação do cofre e diagnóstico de persistência
+
+- **Causa corrigida:** `saveAppSettings()` não deve usar `upsert` contendo `owner_id`. O banco concede INSERT dessa coluna, mas bloqueia UPDATE de `owner_id` por segurança; o ramo UPDATE do UPSERT podia exigir essa permissão e impedir a criação do cofre.
+- **Persistência correta:** atualizar primeiro apenas as colunas mutáveis do registro já existente em `app_settings`; somente inserir um novo registro quando ainda não existir. Nunca liberar UPDATE de `owner_id` para contornar esse problema.
+- **Erros do Supabase:** PostgREST retorna objetos simples e nem sempre `Error`. O cofre deve extrair `code/message/details` e mostrar motivo acionável em vez de sempre exibir uma mensagem genérica.
+- **Banco desatualizado:** se os campos v3 do cofre não existirem, orientar explicitamente a executar `SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql`. Não executar a migration inicial.
+- **UX:** durante a derivação/encapsulamento da chave, desabilitar o botão e mostrar `Criando cofre...` para evitar cliques duplicados.
+- **Criptografia:** fluxo testado com senha curta, desbloqueio por senha, recuperação por código e leitura do mesmo conteúdo cifrado. Não reintroduzir requisito mínimo de senha.
+- **SQL:** nenhuma alteração nova de schema/RPC nesta versão. Se a v2.0.14 já foi aplicada, SQL adicional: NÃO.
+

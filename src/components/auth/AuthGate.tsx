@@ -122,34 +122,81 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+
+    const client = supabase;
     let active = true;
-    supabase.auth.getSession().then(async ({ data }) => {
+    const recoveryUrl = new URL(window.location.href);
+    const recoveryRequested = recoveryUrl.searchParams.get("mode") === "recovery";
+    const recoveryCode = recoveryUrl.searchParams.get("code");
+
+    const clearRecoveryUrl = () => {
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("code");
+      clean.searchParams.delete("mode");
+      clean.hash = "";
+      window.history.replaceState({}, "", `${clean.pathname}${clean.search}`);
+    };
+
+    // A recuperação usa PKCE com detectSessionInUrl=false. Portanto o código retornado
+    // pelo Supabase precisa ser trocado explicitamente por uma sessão antes de mostrar
+    // a tela "Definir nova senha". Não passar pelo MFA nessa sessão temporária.
+    const initialize = async () => {
+      if (recoveryRequested && recoveryCode) {
+        const { data: recovered, error: exchangeError } = await client.auth.exchangeCodeForSession(recoveryCode);
+        if (!active) return;
+
+        if (exchangeError || !recovered.user) {
+          console.error("Password recovery exchange failed", exchangeError);
+          clearRecoveryUrl();
+          setUser(null);
+          setAuthMode("forgot");
+          setError("Este link de recuperação é inválido ou expirou. Solicite um novo link.");
+          setLoading(false);
+          return;
+        }
+
+        clearRecoveryUrl();
+        setUser(recovered.user);
+        setMfaStage("checking");
+        setAuthMode("reset");
+        setError("");
+        setNotice("");
+        setLoading(false);
+        return;
+      }
+
+      const { data } = await client.auth.getSession();
       if (!active) return;
       const currentUser = data.session?.user ?? null;
       setUser(currentUser);
       setLoading(false);
       if (currentUser) await resolveMfa();
-    });
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    };
+
+    const { data: authListener } = client.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       setUser(session?.user ?? null);
       setLoading(false);
+
       if (event === "PASSWORD_RECOVERY") {
-        // O link enviado pelo Supabase cria uma sessão temporária apenas para a troca da senha.
-        // Interceptamos esse evento antes do MFA para que a profissional consiga definir a nova senha.
+        setMfaStage("checking");
         setAuthMode("reset");
         setError("");
         setNotice("");
         return;
       }
+
       if (!session) {
         setMfaStage("checking");
         setAuthMode((current) => current === "reset" ? "login" : current);
       }
     });
+
+    void initialize();
+
     return () => {
       active = false;
-      data.subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
     };
   }, [resolveMfa]);
 
@@ -222,6 +269,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         setSubmitting(false);
         return;
       }
+      window.history.replaceState({}, "", window.location.pathname);
       await supabase.auth.signOut({ scope: "local" });
       setPassword("");
       setConfirmPassword("");
@@ -256,7 +304,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
       setSubmitting(true);
       setError("");
       setNotice("");
-      const redirectTo = `${window.location.origin}${window.location.pathname}`;
+      const redirectTo = `${window.location.origin}${window.location.pathname}?mode=recovery`;
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
       if (resetError) setError(resetError.message || "Não foi possível enviar o e-mail de recuperação.");
       else setNotice("E-mail de recuperação enviado. Abra o link recebido para definir uma nova senha.");

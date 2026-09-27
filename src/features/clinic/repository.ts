@@ -381,7 +381,12 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
-  const allowed: Record<string, unknown> = { owner_id: userData.user.id };
+
+  // IMPORTANTE: não use upsert com owner_id neste ponto. O banco permite INSERT de owner_id,
+  // mas não UPDATE dessa coluna (proteção intencional contra troca de proprietário). Um UPSERT
+  // inclui owner_id no ramo UPDATE e pode falhar justamente ao salvar o cofre/serviços.
+  // Primeiro atualizamos somente as colunas permitidas; se o registro ainda não existir, inserimos.
+  const allowed: Record<string, unknown> = {};
   if (patch.professional_name !== undefined) allowed["professional_name"] = cleanText(patch.professional_name, 160);
   if (patch.crp !== undefined) allowed["crp"] = cleanText(patch.crp, 40);
   if (patch.phone !== undefined) allowed["phone"] = cleanText(patch.phone, 40);
@@ -397,10 +402,24 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
   if (patch.vault_recovery_key_ciphertext !== undefined) allowed["vault_recovery_key_ciphertext"] = patch.vault_recovery_key_ciphertext;
   if (patch.vault_recovery_key_iv !== undefined) allowed["vault_recovery_key_iv"] = patch.vault_recovery_key_iv;
   if (patch.service_catalog !== undefined) allowed["service_catalog"] = cleanServiceCatalog(patch.service_catalog);
+
   const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
-  const { data, error } = await client.from("app_settings").upsert(allowed, { onConflict: "owner_id" }).select(fields).single();
-  if (error) throw error;
-  return data as AppSettingsRow;
+  const { data: updated, error: updateError } = await client
+    .from("app_settings")
+    .update(allowed)
+    .eq("owner_id", userData.user.id)
+    .select(fields)
+    .maybeSingle();
+  if (updateError) throw updateError;
+  if (updated) return updated as AppSettingsRow;
+
+  const { data: created, error: createError } = await client
+    .from("app_settings")
+    .insert({ owner_id: userData.user.id, email: userData.user.email ?? null, ...allowed })
+    .select(fields)
+    .single();
+  if (createError) throw createError;
+  return created as AppSettingsRow;
 }
 
 export async function loadReports(startDate: string, endExclusive: string): Promise<ReportsBundle> {

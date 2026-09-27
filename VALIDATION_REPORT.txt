@@ -1,21 +1,25 @@
-ANA TAGES v2.0.14 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.16 — RELATÓRIO DE VALIDAÇÃO
 
 Base:
-- ANA TAGES v2.0.13 limpa.
+- ANA TAGES v2.0.15 limpa.
 
-Alterações:
-- Recuperação de senha do login por e-mail via Supabase Auth.
-- Cofre clínico v3 recuperável por código separado.
-- Migração compatível do cofre legado v2 no primeiro desbloqueio bem-sucedido.
-- Removido requisito mínimo de caracteres da senha do cofre.
-- Notas clínicas continuam usando a mesma chave de conteúdo; redefinir senha não apaga prontuários.
+Correções:
+- Criação do cofre deixa de usar UPSERT com owner_id e passa a atualizar apenas colunas mutáveis.
+- Fallback de INSERT permanece somente para configuração ainda inexistente.
+- Erros Supabase/PostgREST do cofre agora são traduzidos para mensagens acionáveis.
+- Botão de criação fica bloqueado durante o processamento para evitar envio duplicado.
+- Recuperação de senha PKCE da v2.0.15 foi preservada.
 
 SQL:
-- SIM: executar somente SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql no banco existente.
-- NÃO reexecutar a migration inicial.
+- NÃO há SQL novo na v2.0.16.
+- Se SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql já foi aplicado, não executar SQL adicional.
+- Não reexecutar a migration inicial.
 
 Validações executadas:
-- verify-project.mjs
-- transpilação sintática TypeScript/TSX dos arquivos alterados
-- busca por marcadores de conflito Git
-- ausência de pasta GIT duplicada
+- verify-project.mjs: OK (20 arquivos de fonte).
+- fluxo criptográfico local: criar cofre com senha curta -> desbloquear -> recuperar por código -> descriptografar o mesmo conteúdo: OK.
+- análise sintática TypeScript dos arquivos alterados: sem diagnósticos de sintaxe.
+- ausência de pasta GIT duplicada e marcadores de conflito.
+
+Observação:
+- npm install/build completo não foi executado neste ambiente porque o cache offline não contém @cloudflare/vite-plugin. O pipeline Cloudflare deve executar o build completo após o push.

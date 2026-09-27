@@ -53,3 +53,10 @@ Antes de publicar a v2.0.14 no Cloudflare, execute no Supabase **somente**:
 Isso adiciona os campos necessários ao cofre recuperável. Não reexecute a migration inicial no banco atual.
 
 Para o link de recuperação da senha de login funcionar no domínio publicado, confirme em **Supabase Auth > URL Configuration** que o domínio atual do ANA TAGES está definido como Site URL ou permitido em Redirect URLs.
+
+## Atualização v2.0.15 — recuperação de senha PKCE
+
+- SQL adicional: **NÃO**.
+- Publicar normalmente pelo fluxo GitHub → Cloudflare.
+- Depois do deploy, solicitar **um novo e-mail** em `Esqueci minha senha`; links gerados pela v2.0.14 não possuem o marcador `?mode=recovery` e não são o teste correto desta correção.
+- O callback autorizado continua sendo `https://ana-tages.tagescloud.workers.dev/**` no Supabase.

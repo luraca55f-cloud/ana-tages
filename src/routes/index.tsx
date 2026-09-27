@@ -248,6 +248,38 @@ function appointmentSaveErrorMessage(error: unknown) {
   return "Não foi possível salvar o atendimento por um erro inesperado. Tente novamente; se persistir, consulte os logs do sistema.";
 }
 
+type DataOperationError = { code?: string; message?: string; details?: string; hint?: string };
+
+// Traduz falhas do cofre para mensagens acionáveis. Os erros do Supabase/PostgREST
+// são objetos simples (não instâncias de Error), então depender apenas de `instanceof Error`
+// escondia a causa real e mostrava sempre "Não foi possível criar o cofre".
+function vaultOperationErrorMessage(error: unknown, action: "criar" | "desbloquear" | "redefinir" | "recuperacao") {
+  const dataError = (error && typeof error === "object" ? error : {}) as DataOperationError;
+  const code = dataError.code ?? "";
+  const message = dataError.message ?? (error instanceof Error ? error.message : "");
+  const details = dataError.details ?? "";
+  const combined = `${message} ${details}`.toLowerCase();
+
+  if (code === "PGRST204" || code === "42703" || combined.includes("vault_password_salt") || combined.includes("vault_recovery_salt")) {
+    return "O banco ainda não possui a estrutura de recuperação do cofre. Execute o SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql no Supabase e tente novamente.";
+  }
+  if (code === "42501" || combined.includes("mfa obrigatório") || combined.includes("row-level security") || combined.includes("permission denied")) {
+    return "Sua autorização de segurança não permite salvar o cofre neste momento. Saia e entre novamente, confirme o Google Authenticator e tente de novo.";
+  }
+  if (combined.includes("failed to fetch") || combined.includes("network") || combined.includes("fetch")) {
+    return "Não foi possível comunicar com o Supabase. Verifique a conexão e tente novamente.";
+  }
+  if (code === "23514") {
+    return "O banco rejeitou a configuração do cofre por uma regra de integridade. Atualize a página e tente novamente.";
+  }
+  if (message && !combined.includes("invalid input syntax")) return message;
+
+  if (action === "criar") return "Não foi possível salvar a configuração do cofre. Atualize a página e tente novamente.";
+  if (action === "desbloquear") return "Não foi possível desbloquear o cofre.";
+  if (action === "redefinir") return "Não foi possível redefinir a senha do cofre.";
+  return "Não foi possível atualizar o código de recuperação do cofre.";
+}
+
 function availableServices(settings: AppSettingsRow | null) {
   const catalog = settings?.service_catalog;
   return Array.isArray(catalog) && catalog.length ? catalog : DEFAULT_SERVICE_CATALOG;
@@ -815,6 +847,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
   const [recoveryInput, setRecoveryInput] = useState("");
   const [newPass, setNewPass] = useState("");
   const [confirmNewPass, setConfirmNewPass] = useState("");
+  const [vaultBusy, setVaultBusy] = useState(false);
 
   const saveRecoverableSettings = async (created: {
     password: { salt: string; ciphertext: string; iv: string };
@@ -837,6 +870,8 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       setMessage(!pass ? "Informe uma senha para o cofre." : "As senhas informadas não coincidem.");
       return;
     }
+    setVaultBusy(true);
+    setMessage("");
     try {
       const created = await createRecoverableVault(pass);
       const saved = await saveRecoverableSettings(created);
@@ -847,7 +882,10 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       setConfirmPass("");
       setMessage("Cofre criado. Guarde o código de recuperação abaixo em local seguro.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível criar o cofre.");
+      console.error("Falha ao criar cofre clínico", error);
+      setMessage(vaultOperationErrorMessage(error, "criar"));
+    } finally {
+      setVaultBusy(false);
     }
   };
 
@@ -881,7 +919,8 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       setPass("");
       if (!recoveryCode) setMessage("Cofre desbloqueado nesta sessão.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível desbloquear o cofre.");
+      console.error("Falha ao desbloquear cofre clínico", error);
+      setMessage(vaultOperationErrorMessage(error, "desbloquear"));
     }
   };
 
@@ -919,7 +958,8 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       setRecovering(false);
       setMessage("Senha do cofre redefinida com sucesso. As evoluções existentes foram preservadas.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível redefinir a senha do cofre.");
+      console.error("Falha ao redefinir senha do cofre", error);
+      setMessage(vaultOperationErrorMessage(error, "redefinir"));
     }
   };
 
@@ -937,7 +977,8 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       setRecoveryCode(generated.recoveryCode);
       setMessage("Novo código de recuperação gerado. O código anterior deixou de funcionar.");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Não foi possível gerar um novo código de recuperação.");
+      console.error("Falha ao gerar código de recuperação do cofre", error);
+      setMessage(vaultOperationErrorMessage(error, "recuperacao"));
     }
   };
 
@@ -948,7 +989,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
           <input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Crie uma senha para o cofre" />
           <input type="password" autoComplete="new-password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a senha" />
           <p className="text-[10px] leading-4 text-muted-foreground">Não há requisito mínimo de caracteres. Para maior segurança, prefira uma senha difícil de adivinhar.</p>
-          <Button variant="dashboard" onClick={() => void setup()}>Criar cofre clínico</Button>
+          <Button variant="dashboard" disabled={vaultBusy} onClick={() => void setup()}>{vaultBusy ? "Criando cofre..." : "Criar cofre clínico"}</Button>
         </div>
       ) : recovering ? (
         <div className="space-y-3">
