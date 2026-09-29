@@ -249,3 +249,11 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Segurança do HTML:** dados vindos do banco são escapados antes de entrar no HTML de impressão. Preservar essa proteção ao alterar os modelos.
 - **SQL:** `SQL/05 - Parte 5 - Recibos e documentos financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql`. Ele adiciona cidade, garante `payment_method` e atualiza/sobrecarga RPCs financeiras.
 - **Publicação:** por decisão do usuário, esta etapa continua acumulada com as Partes 1–4. NÃO executar SQL e NÃO publicar até todas as partes estarem finalizadas e revisadas.
+## v2.0.23 — Correção de build TypeScript (29/09/2026)
+- Base: v2.0.22 completa (Partes 1–5), sem remoção funcional e sem alteração de banco.
+- Corrigido `addMonthsClamped` em `FinancePage.tsx` e `src/routes/index.tsx`: valores padrão explícitos eliminam falsos `undefined` sob `noUncheckedIndexedAccess`, preservando a regra de vencimento mensal.
+- Corrigida a tipagem opcional de `Metric.onClick` para compatibilidade com `exactOptionalPropertyTypes` quando um card não recebe callback.
+- Motivo: o Cloudflare compilava client/SSR, mas `tsc --noEmit` bloqueava o deploy da v2.0.22.
+- SQL: NÃO. Os SQLs das Partes 1, 2 e 5 permanecem os mesmos já executados/previstos.
+- Commit sugerido: `Corrigir typecheck do financeiro v2.0.23`.
+

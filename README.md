@@ -1,3 +1,6 @@
+
+> **v2.0.23:** correção exclusiva de build/typecheck sobre a v2.0.22 completa. Não exige SQL adicional.
+
 # TAGES CONSULTORIA ANNA — v2.0.22
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.

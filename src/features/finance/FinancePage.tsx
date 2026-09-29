@@ -89,7 +89,12 @@ function formatCpf(value: string | null | undefined) {
 }
 
 function addMonthsClamped(dateText: string, monthOffset: number) {
-  const [year, month, day] = dateText.split("-").map(Number);
+  // `noUncheckedIndexedAccess` considera itens de `split()` potencialmente ausentes.
+  // Os valores padrão mantêm a função tipada sem alterar a regra de vencimento mensal.
+  const [yearText = "1970", monthText = "01", dayText = "01"] = dateText.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
   const targetMonth = month - 1 + monthOffset;
   const targetYear = year + Math.floor(targetMonth / 12);
   const normalizedMonth = ((targetMonth % 12) + 12) % 12;
@@ -884,7 +889,7 @@ export function FinancePage({
   );
 }
 
-function Metric({ label, value, note, icon, tone = "default", loading = false, error = false, onClick }: { label: string; value: string; note: string; icon: ReactNode; tone?: "default" | "positive" | "negative"; loading?: boolean; error?: boolean; onClick?: () => void }) {
+function Metric({ label, value, note, icon, tone = "default", loading = false, error = false, onClick }: { label: string; value: string; note: string; icon: ReactNode; tone?: "default" | "positive" | "negative"; loading?: boolean; error?: boolean; onClick?: (() => void) | undefined }) {
   const valueTone = tone === "negative" ? "text-destructive" : tone === "positive" ? "text-primary" : "text-foreground";
   const content = <><div className="flex items-start justify-between gap-3"><p className="text-xs font-medium text-muted-foreground">{label}</p><span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-primary [&_svg]:size-5">{icon}</span></div>{loading ? <><div className="mt-4 h-8 w-36 animate-pulse rounded-lg bg-muted/70" /><div className="mt-4 h-3 w-44 animate-pulse rounded bg-muted/60" /></> : <><p className={`mt-3 min-h-[2.6rem] font-display text-[28px] leading-[1.15] tabular-nums sm:text-[30px] ${error ? "text-muted-foreground" : valueTone}`}>{error ? "—" : value}</p><p className={`mt-3 min-h-4 text-[11px] leading-4 ${error ? "text-destructive" : "text-muted-foreground"}`}>{error ? "Não foi possível carregar os dados financeiros." : note}</p></>}</>;
   if (onClick) return <button type="button" onClick={onClick} className="dashboard-card rounded-2xl p-5 text-left transition-transform hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">{content}</button>;

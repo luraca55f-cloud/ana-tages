@@ -1,34 +1,26 @@
-ANA TAGES v2.0.22 — PARTE 5 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.23 — RELATÓRIO DE VALIDAÇÃO
+Data: 29/09/2026
+Base: v2.0.22 completa (Partes 1–5)
 
-Base cumulativa:
-- v2.0.21 Parte 4, contendo também Partes 1, 2 e 3.
+OBJETIVO
+Corrigir exclusivamente o typecheck que bloqueou o deploy Cloudflare da v2.0.22, sem alterar regras de negócio nem banco de dados.
 
-Mantido das etapas anteriores:
-- Dados profissionais (nome, CPF e CRP) em Configurações.
-- CPF do paciente.
-- Botão Trocar senha do cofre.
-- Pacote/plano à vista ou parcelado, com parcelas automáticas vinculadas.
-- A receber completo com devedores, CPF, saldo e andamento das parcelas.
-- Cards Faturado, Recebido, A receber e Despesas clicáveis e rastreáveis.
+ERROS DO LOG CORRIGIDOS
+1. FinancePage.tsx: valores year/month/day potencialmente undefined em addMonthsClamped sob noUncheckedIndexedAccess.
+2. FinancePage.tsx: onClick opcional dos cards financeiros incompatível com exactOptionalPropertyTypes quando o callback é undefined.
+3. src/routes/index.tsx: mesma tipagem year/month/day potencialmente undefined em addMonthsClamped.
 
-Alterações desta etapa:
-- Cidade adicionada às Configurações para completar o modelo de recibo fornecido.
-- Forma de pagamento registrada nos novos recebimentos.
-- Recibo de pagamento por cobrança recebida, com valor por extenso e dados automáticos.
-- Nota de cobrança por cobrança com saldo pendente.
-- Resumo financeiro por paciente/plano, com tabela de parcelas, datas, situação e totais.
-- Impressão A4 pelo navegador, compatível com a opção Salvar como PDF.
-- Emissão bloqueada quando faltam dados mínimos da profissional ou CPF do paciente.
-- Dados interpolados no HTML de impressão passam por escaping.
+ALTERAÇÕES
+- addMonthsClamped agora usa valores padrão explícitos ao decompor a data, preservando a mesma lógica mensal.
+- Metric.onClick aceita explicitamente undefined quando a prop opcional é passada por um chamador.
+- package.json atualizado para 2.0.23.
+- SQL e regras das Partes 1–5 permanecem inalterados.
 
-SQL:
-- Parte 5 exige SQL novo: SQL/05 - Parte 5 - Recibos e documentos financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql.
-- Os SQLs das Partes 1, 2 e 5 estão guardados e ordenados.
-- Por decisão do usuário, NÃO executar nenhum SQL nem publicar até todas as partes estarem concluídas.
-
-Validação executada:
+VALIDAÇÕES LOCAIS
 - scripts/verify-project.mjs: OK — 21 arquivos de fonte, imports locais e dependências declaradas conferidos.
-- Sintaxe TS/TSX via TypeScript transpileModule: OK.
-- Typecheck/build completo não executado neste pacote limpo porque node_modules não acompanha a entrega e a tentativa de instalação local não concluiu dentro do tempo disponível.
-- Pasta GIT duplicada: ausente.
-- Marcadores de conflito Git: verificados no empacotamento final.
+- Parse/transpile TypeScript: OK — 20 arquivos TS/TSX sem erros de sintaxe.
+- Comparação da pasta SQL contra v2.0.22: sem alterações.
+- Nenhuma pasta .git/GIT ou node_modules incluída no pacote final.
+
+SQL: NÃO.
+Commit sugerido: Corrigir typecheck do financeiro v2.0.23

@@ -185,7 +185,12 @@ function dateLabel(value: string) {
 }
 
 function addMonthsClamped(dateText: string, monthOffset: number) {
-  const [year, month, day] = dateText.split("-").map(Number);
+  // `noUncheckedIndexedAccess` considera itens de `split()` potencialmente ausentes.
+  // Os valores padrão mantêm a função tipada sem alterar a regra de vencimento mensal.
+  const [yearText = "1970", monthText = "01", dayText = "01"] = dateText.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
   const targetMonth = month - 1 + monthOffset;
   const targetYear = year + Math.floor(targetMonth / 12);
   const normalizedMonth = ((targetMonth % 12) + 12) % 12;
