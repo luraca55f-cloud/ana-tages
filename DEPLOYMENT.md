@@ -89,3 +89,8 @@ Antes do push da v2.0.19, leia `SQL/LEIA-ME - ORDEM DOS SQL.txt`.
 - Não executar agora. Parte 5 depende das atualizações acumuladas das Partes 1 e 2; Partes 3 e 4 não possuem SQL.
 - A versão final deverá revisar a ordem completa em `SQL/LEIA-ME - ORDEM DOS SQL.txt` antes de qualquer alteração no Supabase.
 - Os documentos usam impressão do navegador; não exigem serviço externo de PDF nem chave adicional no Cloudflare.
+
+## v2.0.24 — segredo do cofre
+Após executar o SQL v2.0.24 e antes de testar a recuperação por e-mail, configure no Worker `ana-tages` um Secret de runtime chamado `VAULT_RECOVERY_SECRET`, com valor aleatório forte de pelo menos 32 caracteres. Não use prefixo `VITE_` e não salve esse valor no GitHub.
+
+Depois do deploy, desbloqueie o cofre uma vez com a senha atual (ou, se necessário, com o código de recuperação antigo). Esse primeiro desbloqueio cria o envelope necessário para as próximas recuperações por e-mail.

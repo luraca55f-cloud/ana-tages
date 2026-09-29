@@ -441,7 +441,7 @@ export async function getAppSettings() {
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
-  const fields = "owner_id,professional_name,cpf,crp,city,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
+  const fields = "owner_id,professional_name,cpf,crp,city,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,vault_email_recovery_ciphertext,vault_email_recovery_iv,vault_email_recovery_version,service_catalog";
   const { data, error } = await client.from("app_settings").select(fields).eq("owner_id", userData.user.id).maybeSingle();
   if (error) throw error;
   if (data) return data as AppSettingsRow;
@@ -476,9 +476,12 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
   if (patch.vault_recovery_salt !== undefined) allowed["vault_recovery_salt"] = patch.vault_recovery_salt;
   if (patch.vault_recovery_key_ciphertext !== undefined) allowed["vault_recovery_key_ciphertext"] = patch.vault_recovery_key_ciphertext;
   if (patch.vault_recovery_key_iv !== undefined) allowed["vault_recovery_key_iv"] = patch.vault_recovery_key_iv;
+  if (patch.vault_email_recovery_ciphertext !== undefined) allowed["vault_email_recovery_ciphertext"] = patch.vault_email_recovery_ciphertext;
+  if (patch.vault_email_recovery_iv !== undefined) allowed["vault_email_recovery_iv"] = patch.vault_email_recovery_iv;
+  if (patch.vault_email_recovery_version !== undefined) allowed["vault_email_recovery_version"] = patch.vault_email_recovery_version;
   if (patch.service_catalog !== undefined) allowed["service_catalog"] = cleanServiceCatalog(patch.service_catalog);
 
-  const fields = "owner_id,professional_name,cpf,crp,city,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
+  const fields = "owner_id,professional_name,cpf,crp,city,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,vault_email_recovery_ciphertext,vault_email_recovery_iv,vault_email_recovery_version,service_catalog";
   const { data: updated, error: updateError } = await client
     .from("app_settings")
     .update(allowed)

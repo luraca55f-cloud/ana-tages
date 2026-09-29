@@ -99,6 +99,11 @@ export type AppSettingsRow = {
   vault_recovery_salt: string | null;
   vault_recovery_key_ciphertext: string | null;
   vault_recovery_key_iv: string | null;
+  // Envelope de recuperação por e-mail. A chave clínica continua criptografada;
+  // o servidor só consegue desembrulhá-la após sessão Supabase válida em AAL2.
+  vault_email_recovery_ciphertext: string | null;
+  vault_email_recovery_iv: string | null;
+  vault_email_recovery_version: number | null;
   service_catalog: ServiceCatalogItem[];
 };
 

@@ -182,3 +182,9 @@ Esta etapa não possui SQL novo. Os SQLs das Partes 1 e 2 continuam acumulados e
 - A impressão usa uma página A4 própria do documento. No diálogo do navegador é possível imprimir ou escolher **Salvar como PDF**.
 - O texto de **RECIBO DE PAGAMENTO** e a estrutura de **RESUMO FINANCEIRO** seguem os modelos fornecidos pelo usuário.
 - SQL desta etapa: `SQL/05 - Parte 5 - Recibos e documentos financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql`. **Não executar ainda.**
+
+### v2.0.24
+- Recuperação do cofre clínico por e-mail cadastrado + Google Authenticator, mantendo código de recuperação como fallback.
+- Requer SQL incremental `SQL/06 - Parte 6 - Recuperacao do cofre por email e PDFs/SQL_ATUALIZACAO_ANA_TAGES_v2.0.24.sql`.
+- Requer Secret de runtime no Cloudflare Worker: `VAULT_RECOVERY_SECRET` (mín. 32 caracteres, sem prefixo `VITE_`).
+- Recibo, nota de cobrança e resumo financeiro imprimem pela própria página, sem depender de pop-up; no diálogo do navegador escolha “Salvar como PDF”.

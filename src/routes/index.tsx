@@ -49,6 +49,8 @@ import {
   createRecoveryEnvelope,
   decryptText,
   encryptText,
+  exportVaultKeyBase64,
+  importVaultKeyBase64,
   isValidVaultPassphrase,
   recoverVaultWithCode,
   unlockLegacyVault,
@@ -323,6 +325,47 @@ function vaultOperationErrorMessage(error: unknown, action: "criar" | "desbloque
   return "Não foi possível atualizar o código de recuperação do cofre.";
 }
 
+async function getAal2AccessToken() {
+  if (!supabase) throw new Error("Supabase não configurado.");
+  const { data: aal, error: aalError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aalError || aal.currentLevel !== "aal2") throw new Error("Confirme o Google Authenticator antes de continuar.");
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (sessionError || !token) throw new Error("Sua sessão segura expirou. Entre novamente.");
+  return token;
+}
+
+async function provisionVaultEmailRecovery(key: CryptoKey) {
+  const token = await getAal2AccessToken();
+  const rawKey = await exportVaultKeyBase64(key);
+  const response = await fetch("/api/vault-email-recovery/provision", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ rawKey }),
+  });
+  const payload = await response.json() as { ciphertext?: string; iv?: string; version?: number; error?: string };
+  if (!response.ok || !payload.ciphertext || !payload.iv) throw new Error(payload.error || "Não foi possível ativar a recuperação por e-mail.");
+  return { ciphertext: payload.ciphertext, iv: payload.iv, version: payload.version ?? 1 };
+}
+
+async function recoverVaultKeyFromEmailEnvelope(settings: AppSettingsRow) {
+  if (!settings.vault_email_recovery_ciphertext || !settings.vault_email_recovery_iv) {
+    throw new Error("A recuperação por e-mail ainda não foi ativada para este cofre.");
+  }
+  const token = await getAal2AccessToken();
+  const response = await fetch("/api/vault-email-recovery/recover", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      ciphertext: settings.vault_email_recovery_ciphertext,
+      iv: settings.vault_email_recovery_iv,
+    }),
+  });
+  const payload = await response.json() as { rawKey?: string; error?: string };
+  if (!response.ok || !payload.rawKey) throw new Error(payload.error || "Não foi possível recuperar o cofre por e-mail.");
+  return importVaultKeyBase64(payload.rawKey);
+}
+
 function availableServices(settings: AppSettingsRow | null) {
   const catalog = settings?.service_catalog;
   return Array.isArray(catalog) && catalog.length ? catalog : DEFAULT_SERVICE_CATALOG;
@@ -343,7 +386,11 @@ function toPatientView(patient: PatientRow, appointments: AppointmentRow[]): Pat
 
 function ConsultorioApp() {
   const { user, signOut } = useAuth();
-  const [activeModule, setActiveModule] = useState<ModuleKey>("Dashboard");
+  const [activeModule, setActiveModule] = useState<ModuleKey>(() =>
+    typeof window !== "undefined" && window.sessionStorage.getItem("tages:vault-email-recovery-authorized") === "1"
+      ? "Configurações"
+      : "Dashboard",
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [patients, setPatients] = useState<PatientRow[]>([]);
   const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
@@ -820,7 +867,7 @@ function SettingsPage({ settings, vaultKey, onVaultKey, onSettings }: { settings
       <ServiceCatalogSettings settings={settings} onSettings={onSettings} />
       <MfaSettings />
       <VaultSettings settings={settings} vaultKey={vaultKey} onVaultKey={onVaultKey} onSettings={onSettings} />
-      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">Controle de acesso:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> cada abertura de prontuário exige um novo código do aplicativo autenticador.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o sistema armazena somente o conteúdo cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha não é salva no sistema. A recuperação depende do código de recuperação gerado para a profissional.</p></div></SettingsCard>
+      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">Controle de acesso:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> cada abertura de prontuário exige um novo código do aplicativo autenticador.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o sistema armazena somente o conteúdo cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha não é salva no sistema. A recuperação principal usa o e-mail cadastrado + Google Authenticator; o código separado permanece como contingência.</p></div></SettingsCard>
     </div>
     {message && <p className="mt-4 text-xs text-primary">{message}</p>}
   </>;
@@ -890,6 +937,7 @@ function MfaSettings() {
 }
 
 function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey | null) => void; onSettings: (s: AppSettingsRow) => void }) {
+  const { user } = useAuth();
   const legacyConfigured = Boolean(settings?.vault_salt && settings?.vault_verifier_ciphertext && settings?.vault_verifier_iv);
   const recoverableConfigured = Boolean(
     settings?.vault_version === 3
@@ -901,11 +949,15 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
     && settings.vault_recovery_key_iv,
   );
   const configured = recoverableConfigured || legacyConfigured;
+  const emailRecoveryConfigured = Boolean(settings?.vault_email_recovery_ciphertext && settings?.vault_email_recovery_iv && settings?.vault_email_recovery_version === 1);
   const [pass, setPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [message, setMessage] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recovering, setRecovering] = useState(false);
+  const [recoveringByEmail, setRecoveringByEmail] = useState(() =>
+    typeof window !== "undefined" && window.sessionStorage.getItem("tages:vault-email-recovery-authorized") === "1",
+  );
   const [changingPassword, setChangingPassword] = useState(false);
   const [recoveryInput, setRecoveryInput] = useState("");
   const [newPass, setNewPass] = useState("");
@@ -928,6 +980,76 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
     vault_recovery_key_iv: created.recovery.iv,
   });
 
+  const activateEmailRecovery = async (key: CryptoKey) => {
+    const envelope = await provisionVaultEmailRecovery(key);
+    const saved = await saveAppSettings({
+      vault_email_recovery_ciphertext: envelope.ciphertext,
+      vault_email_recovery_iv: envelope.iv,
+      vault_email_recovery_version: envelope.version,
+    });
+    onSettings(saved);
+    return saved;
+  };
+
+  const requestEmailRecovery = async () => {
+    if (!supabase || !user?.email) { setMessage("Não foi possível identificar o e-mail cadastrado da conta."); return; }
+    if (!emailRecoveryConfigured) {
+      setMessage("A recuperação por e-mail ainda não foi ativada neste cofre. Desbloqueie-o uma vez com a senha atual ou com o código de recuperação para ativá-la.");
+      return;
+    }
+    setVaultBusy(true);
+    setMessage("");
+    try {
+      const redirectTo = `${window.location.origin}${window.location.pathname}?mode=vault-recovery`;
+      const { error } = await supabase.auth.signInWithOtp({
+        email: user.email,
+        options: { emailRedirectTo: redirectTo, shouldCreateUser: false },
+      });
+      if (error) {
+        const normalized = error.message.toLowerCase();
+        if (normalized.includes("rate limit")) throw new Error("Muitas solicitações de e-mail foram feitas recentemente. Aguarde alguns minutos e tente novamente.");
+        throw error;
+      }
+      setMessage(`Enviamos um link de recuperação para ${user.email}. Abra o e-mail e confirme também o Google Authenticator.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível enviar o e-mail de recuperação.");
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const recoverByEmail = async () => {
+    if (!settings) return;
+    if (!newPass || newPass !== confirmNewPass) {
+      setMessage(!newPass ? "Informe a nova senha do cofre." : "As novas senhas não coincidem.");
+      return;
+    }
+    setVaultBusy(true);
+    setMessage("");
+    try {
+      const key = await recoverVaultKeyFromEmailEnvelope(settings);
+      const passwordEnvelope = await createPasswordEnvelope(key, newPass);
+      const saved = await saveAppSettings({
+        vault_version: 3,
+        vault_password_salt: passwordEnvelope.salt,
+        vault_password_key_ciphertext: passwordEnvelope.ciphertext,
+        vault_password_key_iv: passwordEnvelope.iv,
+      });
+      onSettings(saved);
+      onVaultKey(key);
+      window.sessionStorage.removeItem("tages:vault-email-recovery-authorized");
+      setRecoveringByEmail(false);
+      setNewPass("");
+      setConfirmNewPass("");
+      setMessage("Senha do cofre redefinida por e-mail com sucesso. As evoluções foram preservadas.");
+    } catch (error) {
+      console.error("Falha na recuperação do cofre por e-mail", error);
+      setMessage(error instanceof Error ? error.message : "Não foi possível recuperar o cofre por e-mail.");
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
   const setup = async () => {
     if (!isValidVaultPassphrase(pass) || pass !== confirmPass) {
       setMessage(!pass ? "Informe uma senha para o cofre." : "As senhas informadas não coincidem.");
@@ -943,7 +1065,13 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       setRecoveryCode(created.recoveryCode);
       setPass("");
       setConfirmPass("");
-      setMessage("Cofre criado. Guarde o código de recuperação abaixo em local seguro.");
+      try {
+        await activateEmailRecovery(created.key);
+        setMessage("Cofre criado e recuperação por e-mail ativada. Guarde também o código abaixo como alternativa de emergência.");
+      } catch (emailError) {
+        console.error("Falha ao ativar recuperação do cofre por e-mail", emailError);
+        setMessage(`Cofre criado. A recuperação por e-mail ainda não foi ativada: ${emailError instanceof Error ? emailError.message : "verifique a configuração do servidor"}. Guarde o código abaixo.`);
+      }
     } catch (error) {
       console.error("Falha ao criar cofre clínico", error);
       setMessage(vaultOperationErrorMessage(error, "criar"));
@@ -980,7 +1108,13 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       }
       onVaultKey(key);
       setPass("");
-      if (!recoveryCode) setMessage("Cofre desbloqueado nesta sessão.");
+      try {
+        await activateEmailRecovery(key);
+        if (!recoveryCode) setMessage("Cofre desbloqueado. Recuperação por e-mail ativa para a conta cadastrada.");
+      } catch (emailError) {
+        console.error("Falha ao atualizar recuperação do cofre por e-mail", emailError);
+        if (!recoveryCode) setMessage(`Cofre desbloqueado, mas a recuperação por e-mail não pôde ser ativada: ${emailError instanceof Error ? emailError.message : "verifique a configuração do servidor"}.`);
+      }
     } catch (error) {
       console.error("Falha ao desbloquear cofre clínico", error);
       setMessage(vaultOperationErrorMessage(error, "desbloquear"));
@@ -1019,7 +1153,13 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       setNewPass("");
       setConfirmNewPass("");
       setRecovering(false);
-      setMessage("Senha do cofre redefinida com sucesso. As evoluções existentes foram preservadas.");
+      try {
+        await activateEmailRecovery(key);
+        setMessage("Senha do cofre redefinida. A recuperação por e-mail também ficou ativa e as evoluções foram preservadas.");
+      } catch (emailError) {
+        console.error("Falha ao ativar recuperação por e-mail após código", emailError);
+        setMessage("Senha do cofre redefinida com sucesso. As evoluções existentes foram preservadas; mantenha o código de recuperação guardado.");
+      }
     } catch (error) {
       console.error("Falha ao redefinir senha do cofre", error);
       setMessage(vaultOperationErrorMessage(error, "redefinir"));
@@ -1077,13 +1217,20 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
   };
 
   return (
-    <SettingsCard title="Cofre clínico criptografado" description="A senha não é armazenada no sistema. A recuperação do cofre utiliza um código separado, conhecido somente por quem o guardar.">
+    <SettingsCard title="Cofre clínico criptografado" description="A senha não é armazenada no sistema. A recuperação principal usa o e-mail cadastrado + Google Authenticator; o código de recuperação continua disponível como alternativa de emergência.">
       {!configured ? (
         <div className="space-y-3">
           <input type="password" autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Crie uma senha para o cofre" />
           <input type="password" autoComplete="new-password" value={confirmPass} onChange={(e) => setConfirmPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a senha" />
           <p className="text-[10px] leading-4 text-muted-foreground">Não há requisito mínimo de caracteres. Para maior segurança, prefira uma senha difícil de adivinhar.</p>
           <Button variant="dashboard" disabled={vaultBusy} onClick={() => void setup()}>{vaultBusy ? "Criando cofre..." : "Criar cofre clínico"}</Button>
+        </div>
+      ) : recoveringByEmail ? (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs leading-5 text-primary">E-mail e Google Authenticator confirmados. Defina uma nova senha para o cofre.</div>
+          <input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Nova senha do cofre" autoComplete="new-password" />
+          <input type="password" value={confirmNewPass} onChange={(e) => setConfirmNewPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a nova senha" autoComplete="new-password" />
+          <div className="flex flex-wrap gap-2"><Button variant="dashboard" disabled={vaultBusy} onClick={() => void recoverByEmail()}>{vaultBusy ? "Recuperando..." : "Redefinir senha do cofre"}</Button><Button variant="ghost" onClick={() => { window.sessionStorage.removeItem("tages:vault-email-recovery-authorized"); setRecoveringByEmail(false); setNewPass(""); setConfirmNewPass(""); setMessage(""); }}>Cancelar</Button></div>
         </div>
       ) : recovering ? (
         <div className="space-y-3">
@@ -1103,12 +1250,16 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
       ) : vaultKey ? (
         <div className="space-y-3">
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary"><Check className="mr-2 inline size-4" /> Cofre desbloqueado nesta sessão</div>
+          <p className="text-[10px] leading-4 text-muted-foreground">Recuperação por e-mail: <strong className={emailRecoveryConfigured ? "text-primary" : "text-destructive"}>{emailRecoveryConfigured ? "ativa" : "pendente"}</strong>.</p>
           <div className="flex flex-wrap gap-2"><Button variant="dashboard" size="sm" onClick={() => { setChangingPassword(true); setMessage(""); }}>Trocar senha do cofre</Button><Button variant="quiet" size="sm" onClick={() => void regenerateRecovery()}>Gerar novo código de recuperação</Button></div>
         </div>
       ) : (
         <div className="space-y-3">
           <div className="flex gap-2"><input type="password" autoComplete="off" value={pass} onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void unlock(); }} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" /><Button variant="dashboard" onClick={() => void unlock()}>Desbloquear</Button></div>
-          <button type="button" className="text-xs font-medium text-primary underline-offset-4 hover:underline" onClick={() => { setRecovering(true); setMessage(""); }}>Esqueci a senha do cofre</button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="quiet" size="sm" disabled={vaultBusy} onClick={() => void requestEmailRecovery()}>{vaultBusy ? "Enviando..." : "Recuperar por e-mail"}</Button>
+            <button type="button" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-primary hover:underline" onClick={() => { setRecovering(true); setMessage(""); }}>Usar código de recuperação</button>
+          </div>
         </div>
       )}
       {recoveryCode && <div className="mt-4 rounded-xl border border-border bg-muted/40 p-4"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Código de recuperação do cofre</p><p className="mt-2 break-all font-mono text-sm font-semibold text-foreground">{recoveryCode}</p><div className="mt-3 flex flex-wrap items-center gap-2"><Button variant="quiet" size="sm" onClick={() => { void navigator.clipboard.writeText(recoveryCode); }}>Copiar código</Button><span className="text-[10px] leading-4 text-muted-foreground">Guarde fora do sistema. Ele permite redefinir a senha sem perder as evoluções.</span></div></div>}

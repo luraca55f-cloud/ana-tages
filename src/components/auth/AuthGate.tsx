@@ -75,7 +75,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [authMode, setAuthMode] = useState<"login" | "forgot" | "reset">("login");
+  const [authMode, setAuthMode] = useState<"login" | "forgot" | "reset" | "vault-recovery">("login");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -126,7 +126,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const client = supabase;
     let active = true;
     const recoveryUrl = new URL(window.location.href);
-    const recoveryRequested = recoveryUrl.searchParams.get("mode") === "recovery";
+    const recoveryMode = recoveryUrl.searchParams.get("mode");
+    const recoveryRequested = recoveryMode === "recovery" || recoveryMode === "vault-recovery";
+    const vaultRecoveryRequested = recoveryMode === "vault-recovery";
     const recoveryCode = recoveryUrl.searchParams.get("code");
 
     const clearRecoveryUrl = () => {
@@ -158,7 +160,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
         clearRecoveryUrl();
         setUser(recovered.user);
-        setAuthMode("reset");
+        setAuthMode(vaultRecoveryRequested ? "vault-recovery" : "reset");
         setError("");
         setNotice("");
         setLoading(false);
@@ -189,7 +191,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
       if (!session) {
         setMfaStage("checking");
-        setAuthMode((current) => current === "reset" ? "login" : current);
+        setAuthMode((current) => (current === "reset" || current === "vault-recovery") ? "login" : current);
       }
     });
 
@@ -255,7 +257,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (isSupabaseConfigured && user && authMode === "reset") {
+  if (isSupabaseConfigured && user && (authMode === "reset" || authMode === "vault-recovery")) {
     const verifyRecoveryMfa = async () => {
       if (!supabase || !factorId || !/^\d{6}$/.test(mfaCode)) {
         setError("Informe o código de 6 dígitos do Google Authenticator.");
@@ -333,7 +335,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
             <span className="grid size-12 place-items-center rounded-2xl bg-accent"><ShieldCheck className="size-5" /></span>
             <h1 className="mt-5 font-display text-2xl">Confirmar identidade</h1>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              O link de recuperação já identifica a conta cadastrada. Para autorizar a troca da senha, confirme também o código atual do Google Authenticator.
+              {authMode === "vault-recovery"
+                ? "O link recebido no e-mail confirmou a conta. Para liberar a recuperação do cofre, confirme também o código atual do Google Authenticator."
+                : "O link de recuperação já identifica a conta cadastrada. Para autorizar a troca da senha, confirme também o código atual do Google Authenticator."}
             </p>
             {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
             {mfaStage === "checking" && <p className="mt-5 text-sm text-muted-foreground">Verificando a autenticação em duas etapas...</p>}
@@ -361,6 +365,27 @@ export function AuthGate({ children }: { children: ReactNode }) {
             )}
             {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
             <Button variant="ghost" className="mt-3 w-full" onClick={() => void cancelRecovery()}>Cancelar recuperação</Button>
+          </section>
+        </main>
+      );
+    }
+
+    if (authMode === "vault-recovery") {
+      const continueVaultRecovery = () => {
+        window.sessionStorage.setItem("tages:vault-email-recovery-authorized", "1");
+        setAuthMode("login");
+        setError("");
+        setNotice("");
+      };
+      return (
+        <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+          <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
+            <span className="grid size-12 place-items-center rounded-2xl bg-accent"><ShieldCheck className="size-5" /></span>
+            <h1 className="mt-5 font-display text-2xl">Recuperação do cofre autorizada</h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">E-mail e Google Authenticator confirmados. Continue para definir uma nova senha do cofre clínico.</p>
+            {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
+            <Button variant="dashboard" className="mt-6 w-full" onClick={continueVaultRecovery}>Continuar para o cofre</Button>
+            <Button variant="ghost" className="mt-2 w-full" onClick={() => void cancelRecovery()}>Cancelar</Button>
           </section>
         </main>
       );

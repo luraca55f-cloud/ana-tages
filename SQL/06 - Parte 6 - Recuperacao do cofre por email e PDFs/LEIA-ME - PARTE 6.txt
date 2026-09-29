@@ -1,0 +1,15 @@
+ANA TAGES v2.0.24 — PARTE 6
+
+EXECUTAR NO SUPABASE:
+1. SQL_ATUALIZACAO_ANA_TAGES_v2.0.24.sql
+
+NÃO executar novamente os SQLs 00, 01, 02 ou 05 se eles já foram aplicados.
+
+Além do SQL, a recuperação do cofre por e-mail exige um segredo SOMENTE no Cloudflare Worker:
+VAULT_RECOVERY_SECRET
+
+Esse valor NÃO pode começar com VITE_ e NÃO deve ser colocado no GitHub.
+Use um valor aleatório forte com pelo menos 32 caracteres.
+
+Após publicar a v2.0.24, desbloqueie o cofre UMA VEZ com a senha atual ou com o código de recuperação existente.
+Isso cria o envelope de recuperação por e-mail para o cofre já existente.

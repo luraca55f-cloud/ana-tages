@@ -1,27 +1,17 @@
-ANA TAGES — SQLs acumulados durante o desenvolvimento
+ANA TAGES — SQL DO PACOTE v2.0.24
 
-NÃO EXECUTAR NENHUM SQL AGORA.
-O usuário decidiu aplicar banco e publicar somente depois que todas as partes estiverem prontas.
+SE VOCÊ JÁ EXECUTOU OS SQLs DA v2.0.22:
+Execute SOMENTE:
+06 - Parte 6 - Recuperacao do cofre por email e PDFs/SQL_ATUALIZACAO_ANA_TAGES_v2.0.24.sql
 
-Arquivos acumulados até esta versão:
-
-01 - Parte 1 - Dados profissionais e CPF
-   SQL_ATUALIZACAO_ANA_TAGES_v2.0.18.sql
-
-02 - Parte 2 - Pacotes e parcelamento
-   SQL_ATUALIZACAO_ANA_TAGES_v2.0.19.sql
-
-03 - Parte 3 - A receber completo
-   Não exige SQL novo.
-
-04 - Parte 4 - Cards financeiros clicaveis
-   Não exige SQL novo.
-
-05 - Parte 5 - Recibos e documentos financeiros
-   SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql
-
+NÃO EXECUTE NOVAMENTE:
 00 - Historico - nao executar novamente
-   Contém SQLs antigos apenas para referência.
+01 - Parte 1 - Dados profissionais e CPF
+02 - Parte 2 - Pacotes e parcelamento
+05 - Parte 5 - Recibos e documentos financeiros
 
-Quando todas as partes estiverem concluídas, gerar uma instrução FINAL com a ordem definitiva e, se seguro, um SQL consolidado.
-NÃO executar a migration inicial novamente em banco existente.
+As partes 03 e 04 não possuem SQL.
+
+IMPORTANTE:
+- Não execute a migration inicial do projeto.
+- A v2.0.24 também exige o segredo VAULT_RECOVERY_SECRET no Cloudflare Worker.

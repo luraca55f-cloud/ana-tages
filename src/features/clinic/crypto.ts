@@ -152,6 +152,22 @@ async function unwrapVaultKey(secret: string, envelope: VaultKeyEnvelope, aad: s
   }
 }
 
+
+export async function exportVaultKeyBase64(key: CryptoKey) {
+  const raw = new Uint8Array(await crypto.subtle.exportKey("raw", key));
+  return bytesToBase64(raw);
+}
+
+export async function importVaultKeyBase64(rawBase64: string) {
+  return crypto.subtle.importKey(
+    "raw",
+    base64ToBytes(rawBase64),
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"],
+  );
+}
+
 export async function createRecoverableVault(passphrase: string): Promise<RecoverableVault> {
   if (!isValidVaultPassphrase(passphrase)) throw new Error("Informe uma senha para o cofre.");
   const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);

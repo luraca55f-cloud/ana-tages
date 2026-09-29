@@ -1,26 +1,35 @@
-ANA TAGES v2.0.23 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.24 — RELATÓRIO DE VALIDAÇÃO
 Data: 29/09/2026
-Base: v2.0.22 completa (Partes 1–5)
+Base: v2.0.23 completa (Partes 1–5 + correção de build)
 
 OBJETIVO
-Corrigir exclusivamente o typecheck que bloqueou o deploy Cloudflare da v2.0.22, sem alterar regras de negócio nem banco de dados.
+1. Tornar a recuperação do cofre mais simples por e-mail cadastrado + Google Authenticator.
+2. Corrigir Recibo / Nota de cobrança / Resumo financeiro que dependiam de pop-up e podiam não abrir.
 
-ERROS DO LOG CORRIGIDOS
-1. FinancePage.tsx: valores year/month/day potencialmente undefined em addMonthsClamped sob noUncheckedIndexedAccess.
-2. FinancePage.tsx: onClick opcional dos cards financeiros incompatível com exactOptionalPropertyTypes quando o callback é undefined.
-3. src/routes/index.tsx: mesma tipagem year/month/day potencialmente undefined em addMonthsClamped.
+ALTERAÇÕES PRINCIPAIS
+- Novo fluxo de recuperação do cofre por e-mail da própria conta Supabase; não existe campo para informar outro e-mail.
+- Link de e-mail usa PKCE; após o link o Google Authenticator/AAL2 continua obrigatório.
+- Worker ganhou endpoints /api/vault-email-recovery/provision e /recover, ambos protegidos por token Supabase validado e AAL2.
+- A chave clínica é encapsulada por AES-GCM com Secret de runtime VAULT_RECOVERY_SECRET; somente ciphertext/IV são persistidos no Supabase.
+- Código de recuperação antigo permanece como fallback.
+- Cofres existentes são provisionados para e-mail no primeiro desbloqueio após a atualização.
+- Documentos financeiros passaram a imprimir na própria página via window.print(), sem window.open/pop-up.
 
-ALTERAÇÕES
-- addMonthsClamped agora usa valores padrão explícitos ao decompor a data, preservando a mesma lógica mensal.
-- Metric.onClick aceita explicitamente undefined quando a prop opcional é passada por um chamador.
-- package.json atualizado para 2.0.23.
-- SQL e regras das Partes 1–5 permanecem inalterados.
+SQL
+SIM — somente o incremental da pasta 06 para quem já executou a v2.0.22.
+
+CLOUDFLARE
+SIM — configurar Secret de runtime VAULT_RECOVERY_SECRET com pelo menos 32 caracteres, sem prefixo VITE_.
 
 VALIDAÇÕES LOCAIS
-- scripts/verify-project.mjs: OK — 21 arquivos de fonte, imports locais e dependências declaradas conferidos.
-- Parse/transpile TypeScript: OK — 20 arquivos TS/TSX sem erros de sintaxe.
-- Comparação da pasta SQL contra v2.0.22: sem alterações.
-- Nenhuma pasta .git/GIT ou node_modules incluída no pacote final.
+- scripts/verify-project.mjs: OK — 21 arquivos de fonte; imports locais e dependências declaradas conferidos.
+- Parse/transpile TypeScript: OK — 20 arquivos TS/TSX sem erro de sintaxe.
+- server.ts + utilitários: typecheck isolado com TypeScript 5.x e stubs de dependência externa: OK.
+- crypto.ts: typecheck isolado estrito: OK.
+- documents.ts + tipos financeiros/clínicos: typecheck isolado estrito: OK.
+- Nenhuma pasta .git/GIT ou node_modules deve ser incluída no ZIP final.
 
-SQL: NÃO.
-Commit sugerido: Corrigir typecheck do financeiro v2.0.23
+OBSERVAÇÃO DE SEGURANÇA
+A recuperação por e-mail altera a garantia do modelo anterior: o Worker participa do escrow criptográfico da chave. O código separado continua disponível como contingência, mas não afirmar mais que nem o operador/desenvolvedor poderia recuperar dados sob qualquer hipótese.
+
+Commit sugerido: Adicionar recuperação do cofre por email e corrigir PDFs v2.0.24

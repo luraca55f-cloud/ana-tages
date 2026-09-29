@@ -11,6 +11,8 @@ type RateLimitBinding = {
 
 type Env = {
   HTTP_RATE_LIMITER?: RateLimitBinding;
+  // Segredo SOMENTE de runtime do Worker. Nunca usar prefixo VITE_ porque isso o exporia no frontend.
+  VAULT_RECOVERY_SECRET?: string;
 };
 
 type ServerHandler = {
@@ -18,6 +20,122 @@ type ServerHandler = {
 };
 
 const serverHandler = handler as unknown as ServerHandler;
+
+const SUPABASE_URL = String(import.meta.env["VITE_SUPABASE_URL"] ?? "").trim();
+const SUPABASE_PUBLISHABLE_KEY = String(
+  import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"]
+  ?? import.meta.env["VITE_SUPABASE_ANON_KEY"]
+  ?? "",
+).trim();
+const encoder = new TextEncoder();
+
+type VerifiedUser = { id: string; email?: string };
+
+function base64ToBytes(value: string) {
+  const binary = atob(value);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function bytesToBase64(bytes: Uint8Array) {
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+function readJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const normalized = part.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(part.length / 4) * 4, "=");
+    return JSON.parse(atob(normalized)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+async function verifyAal2User(request: Request): Promise<{ user: VerifiedUser; token: string } | null> {
+  const authorization = request.headers.get("authorization") ?? "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  if (!token || !SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) return null;
+
+  const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) return null;
+  const user = await response.json() as VerifiedUser;
+  if (!user?.id) return null;
+
+  // O JWT só é lido DEPOIS de o endpoint Auth do Supabase validar a assinatura/sessão.
+  const payload = readJwtPayload(token);
+  if (payload?.["aal"] !== "aal2") return null;
+  return { user, token };
+}
+
+async function vaultRecoveryAesKey(secret: string) {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(`tages-anna:vault-email-recovery:v1:${secret}`));
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function handleVaultRecoveryApi(request: Request, env: Env): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/vault-email-recovery/")) return null;
+
+  if (request.method !== "POST") {
+    return new Response("Método não permitido", { status: 405, headers: { allow: "POST" } });
+  }
+  if (!env.VAULT_RECOVERY_SECRET || env.VAULT_RECOVERY_SECRET.length < 32) {
+    return Response.json({ error: "Recuperação por e-mail ainda não foi configurada no servidor." }, { status: 503 });
+  }
+
+  const verified = await verifyAal2User(request);
+  if (!verified) return Response.json({ error: "Sessão AAL2 obrigatória." }, { status: 401 });
+
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json() as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: "Requisição inválida." }, { status: 400 });
+  }
+
+  const aesKey = await vaultRecoveryAesKey(env.VAULT_RECOVERY_SECRET);
+  const aad = encoder.encode(`tages-anna:vault-email-recovery:v1:user:${verified.user.id}`);
+
+  if (url.pathname.endsWith("/provision")) {
+    const rawKey = typeof body["rawKey"] === "string" ? body["rawKey"] : "";
+    let rawBytes: Uint8Array;
+    try { rawBytes = base64ToBytes(rawKey); } catch { return Response.json({ error: "Chave clínica inválida." }, { status: 400 }); }
+    if (rawBytes.byteLength !== 32) return Response.json({ error: "Chave clínica inválida." }, { status: 400 });
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad }, aesKey, rawBytes);
+    return Response.json({
+      ciphertext: bytesToBase64(new Uint8Array(encrypted)),
+      iv: bytesToBase64(iv),
+      version: 1,
+    }, { headers: { "cache-control": "no-store" } });
+  }
+
+  if (url.pathname.endsWith("/recover")) {
+    const ciphertext = typeof body["ciphertext"] === "string" ? body["ciphertext"] : "";
+    const ivValue = typeof body["iv"] === "string" ? body["iv"] : "";
+    try {
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: base64ToBytes(ivValue), additionalData: aad },
+        aesKey,
+        base64ToBytes(ciphertext),
+      );
+      const rawBytes = new Uint8Array(decrypted);
+      if (rawBytes.byteLength !== 32) throw new Error("invalid key length");
+      return Response.json({ rawKey: bytesToBase64(rawBytes) }, { headers: { "cache-control": "no-store" } });
+    } catch {
+      return Response.json({ error: "Não foi possível recuperar a chave clínica com esta configuração." }, { status: 400 });
+    }
+  }
+
+  return new Response("Não encontrado", { status: 404 });
+}
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy": [
@@ -104,6 +222,9 @@ export default {
           headers: { "content-type": "text/plain; charset=utf-8", "retry-after": "60" },
         }), request);
       }
+
+      const vaultRecoveryResponse = await handleVaultRecoveryApi(request, env);
+      if (vaultRecoveryResponse) return secureResponse(vaultRecoveryResponse, request);
 
       const response = await serverHandler.fetch(request, env, ctx);
       return secureResponse(await normalizeCatastrophicSsrResponse(response), request);

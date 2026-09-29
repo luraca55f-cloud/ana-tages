@@ -60,3 +60,10 @@ Este arquivo existe para evitar reaproveitar configurações da implantação an
 ## Complementos de schema após a migration inicial
 
 Para uma instalação realmente nova usando esta versão do código, após a migration inicial aplique também os incrementais indicados em `SQL/LEIA-ME - ORDEM DOS SQL.txt`. A migration histórica não contém as evoluções de CPF/configurações da Parte 1 nem `package_plans`/parcelamento da Parte 2.
+
+## Recuperação do cofre por e-mail (v2.0.24+)
+1. Execute o SQL incremental da pasta 06.
+2. No Cloudflare Worker, crie o Secret `VAULT_RECOVERY_SECRET` com no mínimo 32 caracteres.
+3. Publique o código.
+4. Crie/desbloqueie o cofre uma vez para provisionar a recuperação por e-mail.
+5. O fluxo de recuperação será: e-mail cadastrado -> link seguro -> Google Authenticator -> nova senha do cofre.

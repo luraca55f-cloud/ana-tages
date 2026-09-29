@@ -123,47 +123,70 @@ function validatePatient(patient: PatientIdentity) {
 }
 
 function openPrintWindow(title: string, content: string) {
-  const printWindow = window.open("", "_blank", "width=900,height=1100");
-  if (!printWindow) throw new Error("O navegador bloqueou a janela de impressão. Permita pop-ups para gerar o PDF ou imprimir.");
-  try { printWindow.opener = null; } catch { /* Alguns navegadores bloqueiam a alteração; não afeta a impressão. */ }
-  printWindow.document.open();
-  printWindow.document.write(`<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>${escapeHtml(title)}</title>
-<style>
-  @page { size: A4; margin: 18mm 16mm; }
-  * { box-sizing: border-box; }
-  body { margin: 0; color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.55; }
-  .document { max-width: 180mm; margin: 0 auto; }
-  h1 { margin: 0 0 24px; text-align: center; font-size: 18px; letter-spacing: .04em; }
-  p { margin: 0 0 12px; }
-  .meta { margin: 20px 0; padding: 14px 16px; border: 1px solid #d8d8d8; border-radius: 8px; }
-  .meta p { margin: 4px 0; }
-  .signature { margin-top: 42px; }
-  .signature p { margin: 3px 0; }
-  .muted { color: #555; }
-  .right { text-align: right; }
-  table { width: 100%; border-collapse: collapse; margin: 18px 0; }
-  th, td { border: 1px solid #d7d7d7; padding: 8px 9px; text-align: left; vertical-align: top; }
-  th { background: #f3f3f3; font-size: 11px; }
-  .totals { margin-top: 18px; border-top: 1px solid #d8d8d8; padding-top: 14px; }
-  .totals p { margin: 4px 0; }
-  .focus { background: #fffbe8; }
-  .toolbar { display: flex; justify-content: flex-end; gap: 8px; margin: 0 auto 14px; max-width: 180mm; }
-  .toolbar button { border: 1px solid #bbb; background: white; border-radius: 7px; padding: 8px 12px; cursor: pointer; }
-  @media print { .toolbar { display: none !important; } }
-</style>
-</head>
-<body>
-<div class="toolbar"><button onclick="window.print()">Imprimir / Salvar como PDF</button></div>
-<div class="document">${content}</div>
-<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150));</script>
-</body>
-</html>`);
-  printWindow.document.close();
+  // Evita depender de pop-ups: alguns navegadores bloqueiam window.open() mesmo quando
+  // o clique parte de um botão. A impressão é preparada na própria página, acionada e
+  // removida assim que o diálogo do navegador é fechado.
+  const existing = document.getElementById("tages-print-root");
+  existing?.remove();
+  document.getElementById("tages-print-style")?.remove();
+
+  const printRoot = document.createElement("section");
+  printRoot.id = "tages-print-root";
+  printRoot.setAttribute("aria-hidden", "true");
+  printRoot.innerHTML = `<div class="document">${content}</div>`;
+
+  const style = document.createElement("style");
+  style.id = "tages-print-style";
+  style.textContent = `
+    #tages-print-root { display: none; }
+    @media print {
+      @page { size: A4; margin: 18mm 16mm; }
+      body > *:not(#tages-print-root) { display: none !important; }
+      #tages-print-root { display: block !important; color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.55; }
+      #tages-print-root * { box-sizing: border-box; }
+      #tages-print-root .document { max-width: 180mm; margin: 0 auto; }
+      #tages-print-root h1 { margin: 0 0 24px; text-align: center; font-size: 18px; letter-spacing: .04em; }
+      #tages-print-root p { margin: 0 0 12px; }
+      #tages-print-root .meta { margin: 20px 0; padding: 14px 16px; border: 1px solid #d8d8d8; border-radius: 8px; }
+      #tages-print-root .meta p { margin: 4px 0; }
+      #tages-print-root .signature { margin-top: 42px; }
+      #tages-print-root .signature p { margin: 3px 0; }
+      #tages-print-root .muted { color: #555; }
+      #tages-print-root .right { text-align: right; }
+      #tages-print-root table { width: 100%; border-collapse: collapse; margin: 18px 0; }
+      #tages-print-root th, #tages-print-root td { border: 1px solid #d7d7d7; padding: 8px 9px; text-align: left; vertical-align: top; }
+      #tages-print-root th { background: #f3f3f3; font-size: 11px; }
+      #tages-print-root .totals { margin-top: 18px; border-top: 1px solid #d8d8d8; padding-top: 14px; }
+      #tages-print-root .totals p { margin: 4px 0; }
+      #tages-print-root .focus { background: #fffbe8; }
+    }
+  `;
+
+  const previousTitle = document.title;
+  const cleanup = () => {
+    printRoot.remove();
+    style.remove();
+    document.title = previousTitle;
+    window.removeEventListener("afterprint", cleanup);
+  };
+
+  document.head.appendChild(style);
+  document.body.appendChild(printRoot);
+  document.title = title;
+  window.addEventListener("afterprint", cleanup, { once: true });
+
+  try {
+    // window.print() é disparado diretamente no gesto do usuário, sem nova aba/janela.
+    window.print();
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+
+  // Fallback para navegadores que não disparam afterprint de forma confiável.
+  window.setTimeout(() => {
+    if (document.getElementById("tages-print-root")) cleanup();
+  }, 60_000);
 }
 
 export function printPaymentReceipt({

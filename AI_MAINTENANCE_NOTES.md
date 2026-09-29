@@ -257,3 +257,12 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - SQL: NÃO. Os SQLs das Partes 1, 2 e 5 permanecem os mesmos já executados/previstos.
 - Commit sugerido: `Corrigir typecheck do financeiro v2.0.23`.
 
+
+## v2.0.24 — recuperação do cofre por e-mail + impressão/PDF sem pop-up
+- Fluxo principal de recuperação do cofre passa a ser e-mail cadastrado no Supabase + Google Authenticator (AAL2). O código de recuperação permanece como contingência.
+- Para preservar a criptografia das evoluções, a chave clínica não é salva em texto puro: o frontend envia a chave somente após AAL2 para `/api/vault-email-recovery/provision`; o Worker a encapsula com AES-GCM usando o Secret de runtime `VAULT_RECOVERY_SECRET` e o frontend persiste apenas ciphertext/IV em `app_settings`.
+- O endpoint `/api/vault-email-recovery/recover` exige token Supabase válido + claim `aal=aal2`, validada somente após `/auth/v1/user` aceitar o token. O envelope usa AAD vinculado ao `user.id`.
+- `VAULT_RECOVERY_SECRET` NUNCA pode ser VITE_ nem entrar no Git. Rotacionar esse segredo invalida envelopes existentes até o cofre ser desbloqueado novamente com senha/código para reprovisionar.
+- Cofres existentes precisam ser desbloqueados UMA VEZ após a v2.0.24 (senha atual ou código de recuperação) para ativar o envelope de recuperação por e-mail.
+- A recuperação por e-mail reduz o modelo anterior de “somente quem possui o código consegue recuperar”: quem controla simultaneamente a conta Supabase/MFA, o banco e o segredo do Worker pode tecnicamente recuperar a chave. Não voltar a prometer impossibilidade absoluta de acesso pelo desenvolvedor.
+- Documentos financeiros deixaram de usar `window.open()`. Recibo, nota de cobrança e resumo financeiro agora montam um DOM temporário na própria página e chamam `window.print()`, evitando bloqueio de pop-up. O usuário escolhe “Salvar como PDF” no diálogo do navegador.
