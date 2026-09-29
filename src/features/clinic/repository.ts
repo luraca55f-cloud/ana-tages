@@ -5,6 +5,7 @@ import type {
   AppointmentRow,
   ClinicalNoteRow,
   MaterialRow,
+  PackagePlanRow,
   PatientRow,
   ReportsBundle,
   ServiceCatalogItem,
@@ -27,6 +28,22 @@ function requireSupabase() {
 function cleanText(value: string | null | undefined, max: number) {
   const normalized = value?.trim() ?? "";
   return normalized ? normalized.slice(0, max) : null;
+}
+
+// CPF é armazenado somente com 11 dígitos. A máscara fica apenas na interface.
+// A validação evita que recibos/notas futuros sejam emitidos com um documento claramente inválido.
+function normalizeCpf(value: string | null | undefined) {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length !== 11 || /^(\d)\1{10}$/.test(digits)) throw new Error("CPF inválido");
+  const calc = (length: number) => {
+    let sum = 0;
+    for (let index = 0; index < length; index += 1) sum += Number(digits[index]) * (length + 1 - index);
+    const remainder = (sum * 10) % 11;
+    return remainder === 10 ? 0 : remainder;
+  };
+  if (calc(9) !== Number(digits[9]) || calc(10) !== Number(digits[10])) throw new Error("CPF inválido");
+  return digits;
 }
 
 function safeMoney(value: number | null | undefined) {
@@ -57,14 +74,35 @@ async function detectSafeMime(file: File) {
 
 export async function listPatients() {
   const client = requireSupabase();
-  const { data, error } = await client
-    .from("patients")
-    .select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at")
-    .is("archived_at", null)
-    .order("full_name")
-    .limit(MAX_ROWS);
+  const [patientsResult, plansResult] = await Promise.all([
+    client
+      .from("patients")
+      .select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at")
+      .is("archived_at", null)
+      .order("full_name")
+      .limit(MAX_ROWS),
+    client
+      .from("package_plans")
+      .select("id,patient_id,total_amount,payment_mode,installment_count,first_due_date,status,created_at,updated_at")
+      .eq("status", "active")
+      .limit(MAX_ROWS),
+  ]);
+  const error = patientsResult.error ?? plansResult.error;
   if (error) throw error;
-  return (data ?? []) as PatientRow[];
+  const planByPatient = new Map(
+    ((plansResult.data ?? []) as PackagePlanRow[]).map((plan) => [plan.patient_id, plan]),
+  );
+  return (patientsResult.data ?? []).map((raw) => {
+    const patient = raw as Omit<PatientRow, "package_plan_id" | "package_payment_mode" | "package_installments" | "package_first_due_date">;
+    const plan = planByPatient.get(patient.id);
+    return {
+      ...patient,
+      package_plan_id: plan?.id ?? null,
+      package_payment_mode: plan?.payment_mode ?? null,
+      package_installments: plan?.installment_count ?? null,
+      package_first_due_date: plan?.first_due_date ?? null,
+    } as PatientRow;
+  });
 }
 
 export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow, "full_name">, clientRequestId = crypto.randomUUID()) {
@@ -75,30 +113,32 @@ export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow
   const { data, error } = await client.from("patients").insert({
     client_request_id: clientRequestId,
     full_name: fullName,
+    cpf: normalizeCpf(input.cpf),
     phone: cleanText(input.phone, 40),
     email: cleanText(input.email, 254),
     active: input.active ?? true,
     billing_model: billingModel,
     session_amount: billingModel === "session" && input.session_amount != null ? safeMoney(input.session_amount) : null,
     package_amount: billingModel === "package" ? safeMoney(input.package_amount) : null,
-    package_timing: billingModel === "package" ? (input.package_timing ?? "current_month") : null,
-    billing_day: billingModel === "package" ? Math.max(1, Math.min(28, Number(input.billing_day ?? 5))) : null,
+    package_timing: null,
+    billing_day: null,
     notes_admin: cleanText(input.notes_admin, 4000),
-  }).select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
+  }).select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
   if (error) {
     if ((error as { code?: string }).code === "23505") {
-      const existing = await client.from("patients").select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").eq("client_request_id", clientRequestId).maybeSingle();
-      if (!existing.error && existing.data) return existing.data as PatientRow;
+      const existing = await client.from("patients").select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").eq("client_request_id", clientRequestId).maybeSingle();
+      if (!existing.error && existing.data) return { ...existing.data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
     }
     throw error;
   }
-  return data as PatientRow;
+  return { ...data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
 }
 
 export async function updatePatient(id: string, patch: Partial<PatientRow>) {
   const client = requireSupabase();
   const allowed: Record<string, unknown> = {};
   if (patch.full_name !== undefined) allowed["full_name"] = cleanText(patch.full_name, 160);
+  if (patch.cpf !== undefined) allowed["cpf"] = normalizeCpf(patch.cpf);
   if (patch.phone !== undefined) allowed["phone"] = cleanText(patch.phone, 40);
   if (patch.email !== undefined) allowed["email"] = cleanText(patch.email, 254);
   if (patch.active !== undefined) allowed["active"] = Boolean(patch.active);
@@ -108,9 +148,42 @@ export async function updatePatient(id: string, patch: Partial<PatientRow>) {
   if (patch.package_timing !== undefined) allowed["package_timing"] = patch.package_timing;
   if (patch.billing_day !== undefined) allowed["billing_day"] = patch.billing_day == null ? null : Math.max(1, Math.min(28, Number(patch.billing_day)));
   if (patch.notes_admin !== undefined) allowed["notes_admin"] = cleanText(patch.notes_admin, 4000);
-  const { data, error } = await client.from("patients").update(allowed).eq("id", id).is("archived_at", null).select("id,full_name,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
+  const { data, error } = await client.from("patients").update(allowed).eq("id", id).is("archived_at", null).select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
   if (error) throw error;
-  return data as PatientRow;
+  return { ...data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
+}
+
+// Pacote/plano financeiro é separado do cadastro do paciente para preservar histórico.
+// A RPC cria/reconfigura as parcelas e mantém o vínculo paciente ↔ plano ↔ billing_entries.
+export async function savePatientPackagePlan(input: {
+  patient_id: string;
+  total_amount: number;
+  payment_mode: "single" | "installments";
+  installment_count: number;
+  first_due_date: string;
+  client_request_id?: string;
+}) {
+  const client = requireSupabase();
+  const total = safeMoney(input.total_amount);
+  if (total <= 0) throw new Error("Informe o valor total do pacote/plano.");
+  const installmentCount = input.payment_mode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(input.installment_count)));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.first_due_date)) throw new Error("Informe a data do primeiro pagamento.");
+  const { data, error } = await client.rpc("save_patient_package_plan", {
+    p_patient_id: input.patient_id,
+    p_total_amount: total,
+    p_payment_mode: input.payment_mode,
+    p_installment_count: installmentCount,
+    p_first_due_date: input.first_due_date,
+    p_client_request_id: input.client_request_id ?? crypto.randomUUID(),
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+export async function cancelPatientPackagePlan(patientId: string) {
+  const client = requireSupabase();
+  const { error } = await client.rpc("cancel_patient_package_plan", { p_patient_id: patientId });
+  if (error) throw error;
 }
 
 export async function deletePatient(id: string) {
@@ -157,7 +230,7 @@ export async function listAppointmentPayments(appointmentIds: string[]) {
     const ids = uniqueIds.slice(index, index + chunkSize);
     const { data, error } = await client
       .from("billing_entries")
-      .select("id,appointment_id,status,amount,received_amount,received_at")
+      .select("id,appointment_id,status,amount,received_amount,received_at,payment_method")
       .in("appointment_id", ids)
       .order("created_at", { ascending: false });
     if (error) throw error;
@@ -172,7 +245,7 @@ export async function getAppointmentPayment(appointmentId: string) {
   if (ensure.error) throw ensure.error;
   const { data, error } = await client
     .from("billing_entries")
-    .select("id,appointment_id,status,amount,received_amount,received_at")
+    .select("id,appointment_id,status,amount,received_amount,received_at,payment_method")
     .eq("appointment_id", appointmentId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -181,9 +254,9 @@ export async function getAppointmentPayment(appointmentId: string) {
   return (data ?? null) as AppointmentPaymentRow | null;
 }
 
-export async function markAppointmentPaid(appointmentId: string) {
+export async function markAppointmentPaid(appointmentId: string, paymentMethod: "pix" | "bank_transfer" | "cash" | "credit_card" | "debit_card" | "other") {
   const client = requireSupabase();
-  const { error } = await client.rpc("mark_appointment_paid", { p_appointment_id: appointmentId });
+  const { error } = await client.rpc("mark_appointment_paid", { p_appointment_id: appointmentId, p_payment_method: paymentMethod });
   if (error) throw error;
 }
 
@@ -368,7 +441,7 @@ export async function getAppSettings() {
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
-  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
+  const fields = "owner_id,professional_name,cpf,crp,city,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
   const { data, error } = await client.from("app_settings").select(fields).eq("owner_id", userData.user.id).maybeSingle();
   if (error) throw error;
   if (data) return data as AppSettingsRow;
@@ -388,7 +461,9 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
   // Primeiro atualizamos somente as colunas permitidas; se o registro ainda não existir, inserimos.
   const allowed: Record<string, unknown> = {};
   if (patch.professional_name !== undefined) allowed["professional_name"] = cleanText(patch.professional_name, 160);
+  if (patch.cpf !== undefined) allowed["cpf"] = normalizeCpf(patch.cpf);
   if (patch.crp !== undefined) allowed["crp"] = cleanText(patch.crp, 40);
+  if (patch.city !== undefined) allowed["city"] = cleanText(patch.city, 120);
   if (patch.phone !== undefined) allowed["phone"] = cleanText(patch.phone, 40);
   if (patch.email !== undefined) allowed["email"] = cleanText(patch.email, 254);
   if (patch.vault_salt !== undefined) allowed["vault_salt"] = patch.vault_salt;
@@ -403,7 +478,7 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
   if (patch.vault_recovery_key_iv !== undefined) allowed["vault_recovery_key_iv"] = patch.vault_recovery_key_iv;
   if (patch.service_catalog !== undefined) allowed["service_catalog"] = cleanServiceCatalog(patch.service_catalog);
 
-  const fields = "owner_id,professional_name,crp,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
+  const fields = "owner_id,professional_name,cpf,crp,city,phone,email,vault_salt,vault_verifier_ciphertext,vault_verifier_iv,vault_version,vault_password_salt,vault_password_key_ciphertext,vault_password_key_iv,vault_recovery_salt,vault_recovery_key_ciphertext,vault_recovery_key_iv,service_catalog";
   const { data: updated, error: updateError } = await client
     .from("app_settings")
     .update(allowed)

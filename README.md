@@ -1,4 +1,4 @@
-# TAGES CONSULTORIA ANNA — v2.0.15
+# TAGES CONSULTORIA ANNA — v2.0.22
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 
@@ -51,11 +51,22 @@ Nunca coloque no frontend:
 
 ## Supabase
 
-Em uma instalação **nova e vazia**, execute uma única vez:
+A migration `supabase/migrations/202609220001_initial_schema.sql` é apenas a referência de instalação inicial e **não deve ser reexecutada no banco atual**.
 
-`supabase/migrations/202609220001_initial_schema.sql`
+### Estado atual dos SQLs — não executar ainda
 
-Em produção já existente, **não reexecute a migration inicial**. Atualizações posteriores devem usar apenas o SQL incremental explicitamente indicado na versão correspondente. A v2.0.15 exige o SQL incremental `SQL_ATUALIZACAO_ANA_TAGES_v2.0.15.sql` para habilitar a recuperação segura do cofre clínico.
+Por decisão do usuário, esta versão faz parte de um desenvolvimento cumulativo. **Nenhum SQL das Partes 1, 2 ou 5 deve ser executado agora e a aplicação ainda não deve ser publicada.**
+
+Os SQLs incrementais estão organizados em `SQL/` e serão aplicados somente quando todas as partes estiverem concluídas e revisadas:
+
+- `01 - Parte 1 - Dados profissionais e CPF` — v2.0.18;
+- `02 - Parte 2 - Pacotes e parcelamento` — v2.0.19;
+- `03 - Parte 3 - A receber completo` — sem SQL;
+- `04 - Parte 4 - Cards financeiros clicaveis` — sem SQL;
+- `05 - Parte 5 - Recibos e documentos financeiros` — v2.0.22;
+- `00 - Historico - nao executar novamente` — somente referência.
+
+A ordem definitiva e, se tecnicamente seguro, um SQL consolidado serão preparados apenas no pacote final. O mecanismo recuperável do cofre continua dependendo da atualização v2.0.14 já existente no banco atual; não repetir SQL histórico sem necessidade.
 
 Essa é a migração corrigida após o erro PostgreSQL `42P17` ocorrido na implantação anterior.
 
@@ -107,7 +118,7 @@ Leia `AI_MAINTENANCE_NOTES.md` antes de alterar dependências, deploy, imports o
 - SQL adicional: NÃO.
 
 
-## Atualização v2.0.15 — recuperação de acesso e cofre clínico
+## Atualização v2.0.14 — recuperação de acesso e cofre clínico
 
 - Login: a tela inicial possui `Esqueci minha senha`, usando o fluxo oficial de recuperação por e-mail do Supabase Auth.
 - Cofre clínico: a senha deixa de ser irrecuperável. A chave clínica é encapsulada separadamente pela senha e por um código de recuperação.
@@ -115,9 +126,56 @@ Leia `AI_MAINTENANCE_NOTES.md` antes de alterar dependências, deploy, imports o
 - O código de recuperação deve ser guardado fora do sistema; o banco armazena somente a chave clínica encapsulada, nunca o código em texto.
 - Cofres legados v2 são migrados no primeiro desbloqueio bem-sucedido, preservando a mesma chave usada nas evoluções antigas.
 - A senha do cofre não possui requisito mínimo imposto pela aplicação; continua recomendado usar uma senha difícil de adivinhar.
-- SQL atual: `SQL_ATUALIZACAO_ANA_TAGES_v2.0.15.sql`. Não reexecute a migration inicial em produção.
+- SQL desta arquitetura: `SQL_ATUALIZACAO_ANA_TAGES_v2.0.14.sql`. Não reexecute a migration inicial em produção.
 
-## Correção v2.0.17
+## Correções v2.0.16–v2.0.17
 
-A criação do cofre clínico foi corrigida para não tentar atualizar `owner_id` via UPSERT. O cofre também passa a exibir o motivo real quando o Supabase rejeita a persistência, mantendo a recuperação de senha/cofre introduzida nas versões anteriores. Não há SQL novo nesta versão além do SQL v2.0.14 já necessário para a arquitetura recuperável do cofre.
+A criação do cofre clínico foi corrigida para não tentar atualizar `owner_id` via UPSERT, e a recuperação de senha passou a concluir MFA/AAL2 antes da troca. O cofre também passa a exibir o motivo real quando o Supabase rejeita a persistência, mantendo a recuperação de senha/cofre introduzida nas versões anteriores. Não há SQL novo nesta versão além do SQL v2.0.14 já necessário para a arquitetura recuperável do cofre.
 
+
+
+## Atualização v2.0.18 — Parte 1
+
+- Perfil profissional em Configurações: Nome completo, CPF e CRP.
+- CPF no cadastro/edição de pacientes.
+- CPF armazenado sem máscara e protegido por RLS/owner_id.
+- Botão `Trocar senha do cofre` quando o cofre estiver desbloqueado.
+- SQL desta etapa: `SQL/01 - Parte 1 - Dados profissionais e CPF/SQL_ATUALIZACAO_ANA_TAGES_v2.0.18.sql`.
+
+
+## Atualização v2.0.19 — Parte 2: pacotes e parcelamento
+
+- Cadastro de paciente com `Pacote / plano` agora possui valor total, forma de pagamento `À vista` ou `Parcelado`, número de parcelas e primeiro vencimento.
+- A tela mostra uma prévia de **cada parcela**, com valor e vencimento. O arredondamento é feito em centavos e a última parcela absorve eventual diferença para a soma fechar exatamente no valor total.
+- Ao salvar, o banco cria todas as parcelas automaticamente como `A receber`.
+- O vínculo financeiro é explícito: `patients` → `package_plans` → `billing_entries`, com número/total de parcelas em cada cobrança.
+- A antiga geração mensal automática de pacote foi desativada para não duplicar cobranças no novo modelo.
+- A aba Financeiro > Pacotes e cobrança foi atualizada para refletir à vista/parcelado e primeiro vencimento.
+- SQL da etapa: `SQL/02 - Parte 2 - Pacotes e parcelamento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.19.sql`.
+
+
+## v2.0.20 — Parte 3: A receber completo
+
+O card **A receber** do Dashboard abre a carteira detalhada. A tela Financeiro passa a mostrar devedores por paciente/cliente, CPF, valor total da dívida relacionada, valor pago, saldo, andamento das parcelas e vencimentos, com filtros por paciente, status e período. Pacotes usam o vínculo `package_plan_id` para contar parcelas pagas sem misturar históricos antigos.
+
+Esta etapa não possui SQL novo. Os SQLs anteriores permanecem na pasta `SQL/` e devem ficar sem execução até a conclusão de todas as partes.
+
+## v2.0.21 — Parte 4: cards financeiros clicáveis
+
+Os quatro cards financeiros agora funcionam como atalhos de rastreabilidade: **Faturado** abre a origem das cobranças, **Recebido** abre os pagamentos efetivamente recebidos, **A receber** abre devedores/parcelas e **Despesas** abre os gastos do período. A própria tela Financeiro possui as mesmas rotas por card e abas dedicadas a Faturado e Recebido.
+
+Esta etapa não possui SQL novo. Os SQLs das Partes 1 e 2 continuam acumulados e **não devem ser executados ainda**, conforme decisão do usuário de publicar somente quando todas as partes estiverem concluídas.
+
+
+
+## v2.0.22 — Parte 5: recibos e documentos financeiros
+
+- Cada cobrança com valor recebido pode emitir **Recibo de pagamento**, usando automaticamente nome/CPF do paciente, valor recebido, valor por extenso, descrição, parcela, data e forma de pagamento.
+- Cada cobrança com saldo pendente pode emitir **Nota de cobrança**, com paciente, CPF, referência, parcela, vencimento, valores e situação.
+- A visão **A receber** pode emitir **Resumo financeiro** por paciente/plano, com todas as parcelas relacionadas, valores, datas, situação e totais de recebido/a receber.
+- Os documentos usam automaticamente **Nome completo, CPF, CRP e Cidade** salvos em Configurações. Cidade foi adicionada porque o modelo de recibo fornecido possui `{{cidade}}`. Nenhum dado profissional fica fixo no código.
+- O CPF do paciente vem do próprio cadastro; o sistema bloqueia a emissão se os dados mínimos do profissional ou do paciente estiverem incompletos.
+- Novos recebimentos passam a registrar **forma de pagamento** (Pix, transferência bancária, dinheiro, cartão de crédito, cartão de débito ou outro).
+- A impressão usa uma página A4 própria do documento. No diálogo do navegador é possível imprimir ou escolher **Salvar como PDF**.
+- O texto de **RECIBO DE PAGAMENTO** e a estrutura de **RESUMO FINANCEIRO** seguem os modelos fornecidos pelo usuário.
+- SQL desta etapa: `SQL/05 - Parte 5 - Recibos e documentos financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql`. **Não executar ainda.**

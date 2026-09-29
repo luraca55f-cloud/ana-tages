@@ -1,5 +1,8 @@
 # Deploy — nova implantação
 
+> **DESENVOLVIMENTO CUMULATIVO — NÃO PUBLICAR AINDA:** as Partes 1–5 estão sendo montadas em sequência. Por decisão do usuário, não executar os SQLs acumulados nem fazer deploy até a revisão final do pacote. As instruções históricas abaixo ficam apenas como referência de versões anteriores.
+
+
 ## Estratégia
 
 Esta versão foi preparada para uma instalação nova e não depende do histórico da implantação anterior.
@@ -60,3 +63,29 @@ Para o link de recuperação da senha de login funcionar no domínio publicado, 
 - Publicar normalmente pelo fluxo GitHub → Cloudflare.
 - Depois do deploy, solicitar **um novo e-mail** em `Esqueci minha senha`; links gerados pela v2.0.14 não possuem o marcador `?mode=recovery` e não são o teste correto desta correção.
 - O callback autorizado continua sendo `https://ana-tages.tagescloud.workers.dev/**` no Supabase.
+
+
+## Atualização v2.0.18 — Parte 1
+
+Antes do push desta versão, execute no Supabase **somente**:
+
+`SQL/01 - Parte 1 - Dados profissionais e CPF/SQL_ATUALIZACAO_ANA_TAGES_v2.0.18.sql`
+
+Esse SQL adiciona CPF em `app_settings` e `patients` e concede apenas os privilégios de coluna necessários. Não reexecute a migration inicial. Depois faça o deploy normal GitHub → Cloudflare.
+
+
+## Atualização v2.0.19 — Parte 2
+
+Antes do push da v2.0.19, leia `SQL/LEIA-ME - ORDEM DOS SQL.txt`.
+
+- Se v2.0.18 Parte 1 já estiver no Supabase: execute somente `SQL/02 - Parte 2 - Pacotes e parcelamento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.19.sql`.
+- Se ainda não estiver: execute `SQL/01 - Parte 1 - Dados profissionais e CPF/...v2.0.18.sql` e depois a Parte 2.
+- Não execute novamente os arquivos em `SQL/00 - Historico - nao executar novamente` nem a migration inicial em banco existente.
+
+
+## Atualização v2.0.22 — Parte 5
+
+- SQL novo acumulado: `SQL/05 - Parte 5 - Recibos e documentos financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql`.
+- Não executar agora. Parte 5 depende das atualizações acumuladas das Partes 1 e 2; Partes 3 e 4 não possuem SQL.
+- A versão final deverá revisar a ordem completa em `SQL/LEIA-ME - ORDEM DOS SQL.txt` antes de qualquer alteração no Supabase.
+- Os documentos usam impressão do navegador; não exigem serviço externo de PDF nem chave adicional no Cloudflare.

@@ -181,3 +181,71 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Conta vinculada:** a tela de recuperação exibe o `user.email` da própria sessão criada pelo link; não permite escolher outra conta após abrir o link.
 - **Pós-troca:** depois de `updateUser({ password })`, encerrar a sessão local e exigir novo login + MFA.
 - **SQL:** nenhuma alteração de schema/RPC nesta versão. SQL adicional: NÃO.
+
+
+## Atualização v2.0.18 — Parte 1: identificação profissional, CPF e troca de senha do cofre
+
+- **Configurações é a fonte dos documentos futuros:** nome completo, CPF e CRP da psicóloga devem ser lidos de `app_settings`. Não fixar esses dados no código de recibos/notas.
+- **CPF da profissional:** salvo em `app_settings.cpf`, somente com 11 dígitos. A máscara `000.000.000-00` é apenas de interface.
+- **CPF do paciente:** salvo em `patients.cpf`, também somente com 11 dígitos. Se informado, o frontend valida os dígitos verificadores antes de persistir.
+- **RLS/owner_id:** CPF continua protegido pelas mesmas políticas do registro pai. Não criar endpoint público nem expor CPF em logs.
+- **Trocar senha do cofre:** quando o cofre estiver desbloqueado, existe botão `Trocar senha do cofre`. A operação recria apenas o envelope da senha com a MESMA chave clínica; não recriptografa nem apaga evoluções e não invalida o código de recuperação atual.
+- **SQL:** aplicar apenas `SQL/01 - Parte 1 - Dados profissionais e CPF/SQL_ATUALIZACAO_ANA_TAGES_v2.0.18.sql` no banco existente. Não reexecutar a migration inicial.
+
+
+## Atualização v2.0.19 — Parte 2: pacote/plano e parcelamento
+
+- **Modelo financeiro:** `package_amount` em `patients` é apenas o resumo do valor total. O plano real e histórico fica em `package_plans`; as cobranças ficam em `billing_entries`.
+- **Vínculo obrigatório:** parcelas geradas pelo plano carregam `package_plan_id`, `installment_number` e `installment_count`. Não remover esses campos em futuras telas de A receber/recibos.
+- **À vista:** `payment_mode = single`, `installment_count = 1`; gera uma cobrança pendente na data informada.
+- **Parcelado:** `payment_mode = installments`; gera entre 2 e 60 cobranças mensais, começando no primeiro vencimento. Em meses menores, o dia é limitado ao último dia do mês.
+- **Centavos:** dividir o total em centavos; parcelas iniciais usam divisão inteira e a última absorve o resto. A soma das parcelas deve ser exatamente igual ao total do plano.
+- **A receber:** todas as parcelas nascem `pending`, sem recebimento, e entram imediatamente na carteira a receber.
+- **Reconfiguração:** ao alterar um plano ativo, parcelas pendentes antigas são canceladas; pagamentos concluídos ficam preservados. Se existir qualquer recebimento registrado no plano ativo, bloquear a reconfiguração para evitar gerar um novo valor total e cobrar em duplicidade.
+- **Troca para por sessão:** `cancel_patient_package_plan` cancela somente parcelas pendentes não pagas; histórico pago/parcial é preservado.
+- **Legado:** `generate_package_billings(date)` virou no-op de compatibilidade. Não reativar a criação mensal antiga; ela duplicaria as parcelas do novo plano.
+- **Transação:** a criação/reconfiguração de plano e geração de parcelas ocorre na RPC `save_patient_package_plan`. Não mover essa geração para o frontend.
+- **SQL:** os SQLs estão organizados na pasta `SQL/`. Para esta etapa, executar a Parte 2; a Parte 1 só deve ser executada se ainda não tiver sido aplicada.
+
+
+## Atualização v2.0.20 — Parte 3: A receber completo
+
+- **Entrada pelo Dashboard:** o card `A receber` do Dashboard é clicável e deve abrir `Financeiro > A receber` diretamente. Preservar esse deep-link interno quando a navegação financeira evoluir.
+- **Visão por devedor:** agrupar cobranças abertas por paciente (`patient_id`) e, quando não houver vínculo, por nome do cliente. Mostrar nome, CPF, valor total relacionado à dívida atual, recebido, saldo, vencimentos e situação.
+- **CPF:** vem de `patients.cpf`; nunca tentar reconstruir CPF por nome nem expor o valor em logs. Lançamentos manuais sem paciente vinculado exibem CPF indisponível.
+- **Pacotes:** para um pacote ainda em aberto, carregar também parcelas já pagas com o mesmo `package_plan_id`. Isso permite informar `N parcelas / X pagas` sem misturar pagamentos de pacotes antigos ou sessões históricas não relacionadas.
+- **Não misturar histórico vitalício:** em cobrança por sessão/avulsa, `já pago` considera apenas as cobranças que ainda compõem a dívida atual (por exemplo, baixa parcial). Não somar todos os recebimentos históricos do paciente.
+- **Vencida:** uma cobrança é vencida somente quando ainda há saldo e `due_date` é anterior à data local atual. Pagamentos quitados nunca aparecem como vencidos.
+- **Filtros:** paciente/cliente, status (`pendente`, `parcial`, `vencida`) e intervalo de vencimento. O intervalo decide quais devedores entram na visão; o detalhamento do pacote mantém todas as parcelas relacionadas para preservar contexto do parcelamento.
+- **Ações:** parcelas/cobranças abertas mantêm a ação de baixa já existente; não criar UPDATE financeiro direto no frontend.
+- **Performance:** `loadFinanceBundle(month, true)` carrega histórico de parcelas/CPF apenas na tela Financeiro. O Dashboard continua usando o modo leve.
+- **Banco:** Parte 3 não adiciona schema/RPC/policy. SQL adicional: NÃO. Os SQLs anteriores ficam acumulados e NÃO devem ser executados até o usuário concluir todas as partes.
+
+## Atualização v2.0.21 — Parte 4: cards financeiros clicáveis
+
+- **Dashboard:** os quatro cards financeiros são `Faturado`, `Recebido`, `A receber` e `Despesas`. Todos são clicáveis e devem abrir diretamente a visão que explica o número exibido.
+- **Faturado:** abre `Financeiro > Faturado`, com a origem de cada cobrança do período (paciente/cliente, origem, descrição, status e valor faturado).
+- **Recebido:** abre `Financeiro > Recebido`, com as baixas efetivamente recebidas no período, incluindo ações de editar/excluir recebimento já existentes.
+- **A receber:** preserva a visão completa criada na v2.0.20, com devedores, CPF, saldo e parcelas.
+- **Despesas:** abre `Financeiro > Despesas`, respeitando o período/mês selecionado.
+- **Coerência interna:** os quatro cards do topo da própria tela Financeiro também levam às mesmas visões, evitando cards meramente informativos sem rastreabilidade.
+- **Banco:** esta etapa usa somente dados já carregados por `loadFinanceBundle()` e não altera schema, RLS nem RPCs. SQL adicional: NÃO.
+- **Publicação:** por decisão do usuário, continuar acumulando alterações sem executar SQL nem publicar até o pacote final.
+
+
+
+## Atualização v2.0.22 — Parte 5: recibos, cobrança e resumo financeiro
+
+- **Fonte dos dados profissionais:** documentos financeiros devem buscar `professional_name`, `cpf`, `crp` e `city` em `app_settings`. Não hardcodar nome, CPF, CRP ou cidade da psicóloga no frontend, template ou SQL.
+- **Cidade:** `app_settings.city` foi adicionada nesta etapa porque o modelo de recibo usa `{{cidade}}`. É dado administrativo, protegido pelas mesmas regras de `app_settings`.
+- **Paciente:** recibos, notas de cobrança e resumos usam `patients.full_name` e `patients.cpf`. Bloquear emissão quando o paciente vinculado não possuir CPF em vez de gerar documento incompleto.
+- **Forma de pagamento:** novos recebimentos devem registrar `billing_entries.payment_method` com um dos valores `pix`, `bank_transfer`, `cash`, `credit_card`, `debit_card` ou `other`. A interface traduz esses valores para PT-BR.
+- **Baixas:** continuar usando RPCs. Não transformar edição/baixa de recebimento em `UPDATE` direto pelo frontend. `update_billing_receipt` registra valor, data e forma de pagamento; `delete_billing_receipt` desfaz a baixa e limpa também `payment_method`, preservando a cobrança e todos os vínculos.
+- **Atendimentos:** a ação rápida de receber abre o formulário do atendimento para capturar a forma de pagamento antes da baixa. A sobrecarga `mark_appointment_paid(uuid,text)` reutiliza a regra existente de baixa e só acrescenta a forma de pagamento.
+- **Recibo:** emitir somente quando `received_amount > 0` e existir `received_at`. O valor por extenso é calculado no cliente apenas para apresentação do documento; o valor financeiro oficial continua vindo da `billing_entry`.
+- **Nota de cobrança:** é emitida por cobrança que ainda possui saldo. Deve permanecer descritiva, sem multa/juros não cadastrados e sem alterar a cobrança.
+- **Resumo financeiro:** deve usar o conjunto de cobranças já agrupado para o paciente/plano na visão A receber, preservando `package_plan_id`, números de parcela, datas, recebido e saldo. Não misturar pacotes históricos.
+- **PDF/impressão:** `src/features/finance/documents.ts` monta documento A4 e abre o diálogo de impressão do navegador. O usuário pode imprimir ou escolher `Salvar como PDF`; não há armazenamento automático do PDF no Supabase nesta etapa.
+- **Segurança do HTML:** dados vindos do banco são escapados antes de entrar no HTML de impressão. Preservar essa proteção ao alterar os modelos.
+- **SQL:** `SQL/05 - Parte 5 - Recibos e documentos financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql`. Ele adiciona cidade, garante `payment_method` e atualiza/sobrecarga RPCs financeiras.
+- **Publicação:** por decisão do usuário, esta etapa continua acumulada com as Partes 1–4. NÃO executar SQL e NÃO publicar até todas as partes estarem finalizadas e revisadas.

@@ -1,0 +1,27 @@
+ANA TAGES — SQLs acumulados durante o desenvolvimento
+
+NÃO EXECUTAR NENHUM SQL AGORA.
+O usuário decidiu aplicar banco e publicar somente depois que todas as partes estiverem prontas.
+
+Arquivos acumulados até esta versão:
+
+01 - Parte 1 - Dados profissionais e CPF
+   SQL_ATUALIZACAO_ANA_TAGES_v2.0.18.sql
+
+02 - Parte 2 - Pacotes e parcelamento
+   SQL_ATUALIZACAO_ANA_TAGES_v2.0.19.sql
+
+03 - Parte 3 - A receber completo
+   Não exige SQL novo.
+
+04 - Parte 4 - Cards financeiros clicaveis
+   Não exige SQL novo.
+
+05 - Parte 5 - Recibos e documentos financeiros
+   SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql
+
+00 - Historico - nao executar novamente
+   Contém SQLs antigos apenas para referência.
+
+Quando todas as partes estiverem concluídas, gerar uma instrução FINAL com a ordem definitiva e, se seguro, um SQL consolidado.
+NÃO executar a migration inicial novamente em banco existente.

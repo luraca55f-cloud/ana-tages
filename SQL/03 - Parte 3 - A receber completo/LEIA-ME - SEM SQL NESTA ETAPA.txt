@@ -1,0 +1,9 @@
+ANA TAGES v2.0.20 — Parte 3 — A receber completo
+
+Esta etapa NÃO cria tabela, coluna, política ou RPC nova.
+Ela usa os campos já preparados nas Partes 1 e 2 (CPF do paciente, package_plan_id e metadados das parcelas).
+
+SQL adicional desta Parte 3: NÃO.
+
+IMPORTANTE: por decisão do usuário, não executar nenhum SQL agora.
+Os SQLs das Partes 1 e 2 devem permanecer guardados até todas as partes do projeto estarem concluídas e o pacote final indicar a ordem definitiva.

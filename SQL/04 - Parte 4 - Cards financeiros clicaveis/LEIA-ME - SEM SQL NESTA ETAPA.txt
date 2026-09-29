@@ -1,0 +1,8 @@
+ANA TAGES v2.0.21 — PARTE 4
+
+Esta etapa NÃO exige SQL novo.
+
+Os cards financeiros clicáveis e as novas visões Faturado/Recebido usam dados já disponíveis em billing_entries e expenses.
+
+NÃO EXECUTAR NENHUM SQL AGORA.
+O banco será atualizado somente quando todas as partes estiverem concluídas.

@@ -1,0 +1,18 @@
+ANA TAGES v2.0.22 — PARTE 5
+
+NÃO EXECUTAR AGORA.
+O usuário decidiu aplicar os SQLs somente quando todas as partes estiverem concluídas e revisadas.
+
+Este diretório contém:
+- SQL_ATUALIZACAO_ANA_TAGES_v2.0.22.sql
+
+O SQL adiciona/garante:
+- cidade em app_settings para emissão de recibos;
+- forma de pagamento em baixas financeiras;
+- RPC de receita manual com forma de pagamento;
+- RPC de edição/registro de recebimento com forma de pagamento;
+- limpeza da forma de pagamento ao desfazer uma baixa;
+- baixa de atendimento com forma de pagamento.
+
+Quando chegar a etapa final, seguir a ordem definida no arquivo SQL/LEIA-ME - ORDEM DOS SQL.txt.
+Não executar a migration inicial novamente em banco existente.

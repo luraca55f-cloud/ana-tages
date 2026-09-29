@@ -55,3 +55,8 @@ Este arquivo existe para evitar reaproveitar configurações da implantação an
 - Definir senha temporária e permitir que Anna troque a senha.
 - Transferir/reconfigurar MFA no aparelho da Anna.
 - Anna deve criar a própria senha do cofre clínico.
+
+
+## Complementos de schema após a migration inicial
+
+Para uma instalação realmente nova usando esta versão do código, após a migration inicial aplique também os incrementais indicados em `SQL/LEIA-ME - ORDEM DOS SQL.txt`. A migration histórica não contém as evoluções de CPF/configurações da Parte 1 nem `package_plans`/parcelamento da Parte 2.

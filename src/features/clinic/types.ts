@@ -1,6 +1,9 @@
+export type PackagePaymentMode = "single" | "installments";
+
 export type PatientRow = {
   id: string;
   full_name: string;
+  cpf: string | null;
   phone: string | null;
   email: string | null;
   active: boolean;
@@ -9,6 +12,12 @@ export type PatientRow = {
   package_amount: number | null;
   package_timing: "current_month" | "next_month" | null;
   billing_day: number | null;
+  // Campos abaixo vêm do plano ativo em package_plans. Eles ficam no tipo do paciente
+  // para a UI trabalhar com um único objeto sem duplicar estado financeiro.
+  package_plan_id: string | null;
+  package_payment_mode: PackagePaymentMode | null;
+  package_installments: number | null;
+  package_first_due_date: string | null;
   notes_admin: string | null;
   archived_at: string | null;
   created_at: string;
@@ -47,6 +56,7 @@ export type AppointmentPaymentRow = {
   amount: number;
   received_amount: number;
   received_at: string | null;
+  payment_method: "pix" | "bank_transfer" | "cash" | "credit_card" | "debit_card" | "other" | null;
 };
 
 export type MaterialRow = {
@@ -74,7 +84,9 @@ export type ClinicalNoteRow = {
 export type AppSettingsRow = {
   owner_id: string;
   professional_name: string;
+  cpf: string | null;
   crp: string | null;
+  city: string | null;
   phone: string | null;
   email: string | null;
   vault_salt: string | null;
@@ -104,4 +116,16 @@ export type ReportsBundle = {
   received: Array<{ id: string; received_amount: number; received_at: string | null }>;
   receivables: Array<{ id: string; amount: number; received_amount: number; status: string }>;
   expenses: Array<{ id: string; amount: number; competence_date: string }>;
+};
+
+export type PackagePlanRow = {
+  id: string;
+  patient_id: string;
+  total_amount: number;
+  payment_mode: PackagePaymentMode;
+  installment_count: number;
+  first_due_date: string;
+  status: "active" | "cancelled" | "completed";
+  created_at: string;
+  updated_at: string;
 };

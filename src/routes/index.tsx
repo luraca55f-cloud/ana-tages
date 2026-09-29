@@ -38,7 +38,9 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "../components/ui/button";
 import { AuthGate, useAuth } from "../components/auth/AuthGate";
-import { FinanceDashboardMetrics, FinancePage as FinancePageV2 } from "../features/finance/FinancePage";
+import { FinanceDashboardMetrics, FinancePage as FinancePageV2, type FinanceTab } from "../features/finance/FinancePage";
+import { paymentMethodLabels } from "../features/finance/documents";
+import type { PaymentMethod } from "../features/finance/types";
 import {
   clinicalAad,
   createPasswordEnvelope,
@@ -75,6 +77,8 @@ import {
   openMaterial,
   revokeClinicalAccess,
   saveAppSettings,
+  savePatientPackagePlan,
+  cancelPatientPackagePlan,
   updateAppointment,
   updatePatient,
   uploadMaterial,
@@ -180,8 +184,42 @@ function dateLabel(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(`${value.slice(0, 10)}T12:00:00`));
 }
 
+function addMonthsClamped(dateText: string, monthOffset: number) {
+  const [year, month, day] = dateText.split("-").map(Number);
+  const targetMonth = month - 1 + monthOffset;
+  const targetYear = year + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(targetYear, normalizedMonth + 1, 0).getDate();
+  const result = new Date(targetYear, normalizedMonth, Math.min(day, lastDay));
+  return `${result.getFullYear()}-${String(result.getMonth() + 1).padStart(2, "0")}-${String(result.getDate()).padStart(2, "0")}`;
+}
+
+function packageInstallmentPreview(total: number, count: number, firstDueDate: string) {
+  if (!Number.isFinite(total) || total <= 0 || !firstDueDate || count < 1) return [];
+  const totalCents = Math.round(total * 100);
+  const baseCents = Math.floor(totalCents / count);
+  return Array.from({ length: count }, (_, index) => ({
+    number: index + 1,
+    dueDate: addMonthsClamped(firstDueDate, index),
+    amount: (index === count - 1 ? totalCents - baseCents * (count - 1) : baseCents) / 100,
+  }));
+}
+
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? "").join("");
+}
+
+function cpfDigits(value: string) {
+  return value.replace(/\D/g, "").slice(0, 11);
+}
+
+function formatCpf(value: string | null | undefined) {
+  const digits = cpfDigits(value ?? "");
+  if (!digits) return "";
+  return digits
+    .replace(/^(\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3}\.\d{3})(\d)/, "$1.$2")
+    .replace(/^(\d{3}\.\d{3}\.\d{3})(\d{1,2})$/, "$1-$2");
 }
 
 function statusLabel(status: AppointmentStatus) {
@@ -312,6 +350,7 @@ function ConsultorioApp() {
   const [loadingCore, setLoadingCore] = useState(isSupabaseConfigured);
   const [coreLoadError, setCoreLoadError] = useState(false);
   const [pendingQuickAction, setPendingQuickAction] = useState<QuickAction | null>(null);
+  const [pendingFinanceTab, setPendingFinanceTab] = useState<FinanceTab | null>(null);
 
   const refreshCore = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -360,6 +399,11 @@ function ConsultorioApp() {
     openModule(action === "session" ? "Sessões" : "Financeiro");
   };
 
+  const openFinanceTab = (tab: FinanceTab) => {
+    setPendingFinanceTab(tab);
+    openModule("Financeiro");
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground lg:flex">
       <aside className={`${menuOpen ? "flex" : "hidden"} fixed inset-y-0 left-0 z-50 w-64 flex-col border-r border-border bg-card/95 p-5 backdrop-blur-xl lg:sticky lg:top-0 lg:flex lg:h-screen lg:bg-card/60`}>
@@ -388,11 +432,11 @@ function ConsultorioApp() {
         </header>
 
         <main className="mx-auto max-w-[1460px] p-4 sm:p-7">
-          {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} loading={loadingCore} loadError={coreLoadError} openModule={openModule} openRecord={setRecordPatient} onQuickAction={runQuickAction} />}
+          {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} loading={loadingCore} loadError={coreLoadError} openModule={openModule} openRecord={setRecordPatient} onQuickAction={runQuickAction} openFinanceTab={openFinanceTab} />}
           {activeModule === "Agenda" && <AgendaPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
           {activeModule === "Pacientes" && <PatientsPage patients={patientViews} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
           {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} initialCreate={pendingQuickAction === "session"} onInitialCreateHandled={() => setPendingQuickAction(null)} />}
-          {activeModule === "Financeiro" && <FinancePageV2 initialModal={pendingQuickAction === "expense" ? "expense" : pendingQuickAction === "revenue" ? "revenue" : null} onInitialModalHandled={() => setPendingQuickAction(null)} />}
+          {activeModule === "Financeiro" && <FinancePageV2 initialModal={pendingQuickAction === "expense" ? "expense" : pendingQuickAction === "revenue" ? "revenue" : null} onInitialModalHandled={() => setPendingQuickAction(null)} initialTab={pendingFinanceTab} onInitialTabHandled={() => setPendingFinanceTab(null)} />}
           {activeModule === "Relatórios" && <ReportsPage />}
           {activeModule === "Materiais" && <MaterialsPage />}
           {activeModule === "Configurações" && <SettingsPage settings={settings} vaultKey={vaultKey} onVaultKey={setVaultKey} onSettings={(value) => setSettings(value)} />}
@@ -412,7 +456,7 @@ function PageHeader({ title, description, action }: { title: string; description
 
 // Regra de continuidade: após F5, arrays vazios são apenas o estado inicial do React.
 // Não apresentar zeros/"nenhum" até o carregamento principal terminar; use skeleton/erro explícito.
-function DashboardPage({ patients: _patients, appointments, loading, loadError, openModule, openRecord: _openRecord, onQuickAction }: { patients: PatientView[]; appointments: AppointmentRow[]; loading: boolean; loadError: boolean; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void; onQuickAction: (action: QuickAction) => void }) {
+function DashboardPage({ patients: _patients, appointments, loading, loadError, openModule, openRecord: _openRecord, onQuickAction, openFinanceTab }: { patients: PatientView[]; appointments: AppointmentRow[]; loading: boolean; loadError: boolean; openModule: (m: ModuleKey) => void; openRecord: (p: PatientView) => void; onQuickAction: (action: QuickAction) => void; openFinanceTab: (tab: FinanceTab) => void }) {
   const today = isoDateLocal();
   const now = Date.now();
   const todayAppointments = appointments.filter((item) => item.scheduled_at.slice(0, 10) === today && item.status !== "cancelled").sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at));
@@ -429,7 +473,7 @@ function DashboardPage({ patients: _patients, appointments, loading, loadError, 
 
   return <>
     <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6"><div><h1 className="font-display text-3xl">Olá, Anna!</h1><p className="mt-2 text-sm text-muted-foreground">O essencial do consultório em uma visão rápida.</p></div><p className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("pt-BR", { dateStyle: "full", timeZone: "America/Sao_Paulo" }).format(new Date())}</p></section>
-    <FinanceDashboardMetrics />
+    <FinanceDashboardMetrics onOpenBilled={() => openFinanceTab("billed")} onOpenReceived={() => openFinanceTab("received")} onOpenReceivables={() => openFinanceTab("receivables")} onOpenExpenses={() => openFinanceTab("expenses")} />
 
     <div className="mt-4 grid grid-cols-12 gap-4">
       <section className="dashboard-card col-span-12 rounded-2xl p-5 xl:col-span-8">
@@ -547,10 +591,15 @@ function AgendaPage({ patients, services, onChanged }: { patients: PatientRow[];
 
 function PatientsPage({ patients, onNew, onEdit, onRecord, onChanged }: { patients: PatientView[]; onNew: () => void; onEdit: (p: PatientRow) => void; onRecord: (p: PatientView) => void; onChanged: () => Promise<void> }) {
   const [query, setQuery] = useState("");
-  const visible = patients.filter((p) => p.full_name.toLowerCase().includes(query.toLowerCase()) || (p.phone ?? "").includes(query));
+  const visible = patients.filter((p) => {
+    const normalizedQuery = cpfDigits(query);
+    return p.full_name.toLowerCase().includes(query.toLowerCase())
+      || (p.phone ?? "").includes(query)
+      || (normalizedQuery.length > 0 && (p.cpf ?? "").includes(normalizedQuery));
+  });
   return <>
     <PageHeader title="Pacientes" description="Cadastro administrativo, regras de cobrança e acesso seguro ao prontuário clínico." action={<Button variant="dashboard" onClick={onNew}><UserPlus /> Novo paciente</Button>} />
-    <section className="dashboard-card rounded-2xl p-4 sm:p-5"><div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar paciente..." /></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[780px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Paciente</th><th className="px-3 py-3">Última sessão</th><th className="px-3 py-3">Próxima sessão</th><th className="px-3 py-3">Cobrança</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{visible.map((p) => <tr key={p.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{p.initials}</span><div><p className="text-[13px] font-medium">{p.full_name}</p><p className="text-[10px] text-muted-foreground">{p.phone || "Sem telefone"}</p></div></div></td><td className="px-3 py-4 text-xs text-muted-foreground">{p.lastSession}</td><td className="px-3 py-4 text-xs">{p.nextSession}</td><td className="px-3 py-4 text-xs">{p.billing_model === "package" ? `Pacote ${p.package_amount ? money(p.package_amount) : ""}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</td><td className="px-3 py-4"><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></td><td className="px-3 py-4"><div className="flex justify-end gap-1"><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="ghost" size="icon" onClick={() => onEdit(p)}><Pencil /></Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /></Button></div></td></tr>)}</tbody></table>{visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}</div></section>
+    <section className="dashboard-card rounded-2xl p-4 sm:p-5"><div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar paciente..." /></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[780px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Paciente</th><th className="px-3 py-3">Última sessão</th><th className="px-3 py-3">Próxima sessão</th><th className="px-3 py-3">Cobrança</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{visible.map((p) => <tr key={p.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{p.initials}</span><div><p className="text-[13px] font-medium">{p.full_name}</p><p className="text-[10px] text-muted-foreground">{p.phone || "Sem telefone"}</p></div></div></td><td className="px-3 py-4 text-xs text-muted-foreground">{p.lastSession}</td><td className="px-3 py-4 text-xs">{p.nextSession}</td><td className="px-3 py-4 text-xs">{p.billing_model === "package" ? `Pacote ${p.package_amount ? money(p.package_amount) : ""}${p.package_payment_mode === "installments" && p.package_installments ? ` • ${p.package_installments}x` : " • à vista"}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</td><td className="px-3 py-4"><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></td><td className="px-3 py-4"><div className="flex justify-end gap-1"><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="ghost" size="icon" onClick={() => onEdit(p)}><Pencil /></Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /></Button></div></td></tr>)}</tbody></table>{visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}</div></section>
     <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Cada abertura exige código TOTP. O conteúdo das evoluções é criptografado no navegador antes de ser armazenado.</p></div></div></section>
   </>;
 }
@@ -608,10 +657,6 @@ function SessionsPage({ patients, services, onChanged, initialCreate = false, on
     const payment = paymentMap.get(item.id)!;
     return sum + Math.max(0, Number(payment.amount) - Number(payment.received_amount || 0));
   }, 0);
-  const receiveAppointment = async (item: AppointmentRow) => {
-    try { await markAppointmentPaid(item.id); await reload(); await onChanged(); }
-    catch { alert("Não foi possível registrar o recebimento deste atendimento."); }
-  };
   const paymentState = (item: AppointmentRow) => {
     if (isPackageSession(item)) return { label: "Incluída no pacote", tone: "muted" as const };
     const payment = paymentMap.get(item.id);
@@ -682,7 +727,7 @@ function SessionsPage({ patients, services, onChanged, initialCreate = false, on
         </div>
         {hasFilters && <div className="mt-2 flex justify-end"><Button size="sm" variant="ghost" onClick={clearFilters}>Limpar filtros</Button></div>}
       </div>
-      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1040px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Atendimento</th><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{filteredItems.map((item) => { const payment = paymentMap.get(item.id); const state = paymentState(item); return <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{isPackageSession(item) ? "Pacote" : money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.tone === "ok" ? "bg-primary/8 text-primary" : state.tone === "warn" ? "bg-secondary/15 text-secondary" : "bg-muted text-muted-foreground"}`}>{state.label}</span></td><td className="px-3 py-4"><div className="flex justify-end gap-2">{payment && (payment.status === "pending" || payment.status === "partial") && !isPackageSession(item) && <Button size="sm" variant="quiet" onClick={() => void receiveAppointment(item)}><Check /> Receber</Button>}<Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></div></td></tr>; })}</tbody></table>{filteredItems.length === 0 && !loading && <Empty text={hasFilters ? "Nenhum atendimento corresponde aos filtros." : "Nenhum atendimento encontrado neste período."} />}</div>
+      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1040px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Atendimento</th><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{filteredItems.map((item) => { const payment = paymentMap.get(item.id); const state = paymentState(item); return <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{isPackageSession(item) ? "Pacote" : money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.tone === "ok" ? "bg-primary/8 text-primary" : state.tone === "warn" ? "bg-secondary/15 text-secondary" : "bg-muted text-muted-foreground"}`}>{state.label}</span></td><td className="px-3 py-4"><div className="flex justify-end gap-2">{payment && (payment.status === "pending" || payment.status === "partial") && !isPackageSession(item) && <Button size="sm" variant="quiet" onClick={() => setEditing(item)}><Check /> Receber</Button>}<Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></div></td></tr>; })}</tbody></table>{filteredItems.length === 0 && !loading && <Empty text={hasFilters ? "Nenhum atendimento corresponde aos filtros." : "Nenhum atendimento encontrado neste período."} />}</div>
     </section>
     {editing && <AppointmentModal patients={patients} services={services} appointment={editing === "new" ? null : editing} defaultDate={`${month}-01`} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
   </>;
@@ -748,17 +793,29 @@ function MaterialsPage() {
 }
 
 function SettingsPage({ settings, vaultKey, onVaultKey, onSettings }: { settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey | null) => void; onSettings: (s: AppSettingsRow) => void }) {
-  const [draft, setDraft] = useState({ professional_name: settings?.professional_name || "Anna Karina Dias", crp: settings?.crp || "", phone: settings?.phone || "", email: settings?.email || "" });
+  // Nome completo, CPF e CRP formam a identificação profissional usada futuramente
+  // em recibos e notas de cobrança. Não fixe esses dados no código: a fonte é Configurações.
+  const [draft, setDraft] = useState({ professional_name: settings?.professional_name || "Anna Karina Dias", cpf: formatCpf(settings?.cpf), crp: settings?.crp || "", city: settings?.city || "", phone: settings?.phone || "", email: settings?.email || "" });
   const [message, setMessage] = useState("");
-  useEffect(() => { if (settings) setDraft({ professional_name: settings.professional_name, crp: settings.crp || "", phone: settings.phone || "", email: settings.email || "" }); }, [settings]);
+  useEffect(() => { if (settings) setDraft({ professional_name: settings.professional_name, cpf: formatCpf(settings.cpf), crp: settings.crp || "", city: settings.city || "", phone: settings.phone || "", email: settings.email || "" }); }, [settings]);
+  const saveProfile = async () => {
+    setMessage("");
+    try {
+      const saved = await saveAppSettings({ ...draft, cpf: draft.cpf || null });
+      onSettings(saved);
+      setMessage("Perfil salvo.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível salvar o perfil.");
+    }
+  };
   return <>
     <PageHeader title="Configurações" description="Perfil, serviços oferecidos e proteção da conta e dos prontuários." />
     <div className="grid gap-4 xl:grid-cols-2">
-      <SettingsCard title="Perfil profissional" description="Dados administrativos da profissional."><div className="grid gap-4 sm:grid-cols-2"><FieldEdit label="Nome" value={draft.professional_name} onChange={(v) => setDraft((d) => ({...d, professional_name:v}))} /><FieldEdit label="CRP" value={draft.crp} onChange={(v) => setDraft((d) => ({...d, crp:v}))} /><FieldEdit label="Telefone" value={draft.phone} onChange={(v) => setDraft((d) => ({...d, phone:v}))} /><FieldEdit label="E-mail" value={draft.email} onChange={(v) => setDraft((d) => ({...d, email:v}))} /></div><Button variant="quiet" size="sm" className="mt-4" onClick={async () => { const saved = await saveAppSettings(draft); onSettings(saved); setMessage("Perfil salvo."); }}>Salvar alterações</Button></SettingsCard>
+      <SettingsCard title="Perfil profissional" description="Dados administrativos usados no consultório, recibos e documentos financeiros."><div className="grid gap-4 sm:grid-cols-2"><FieldEdit label="Nome completo" value={draft.professional_name} onChange={(v) => setDraft((d) => ({...d, professional_name:v}))} /><FieldEdit label="CPF" value={draft.cpf} onChange={(v) => setDraft((d) => ({...d, cpf:formatCpf(v)}))} /><FieldEdit label="CRP" value={draft.crp} onChange={(v) => setDraft((d) => ({...d, crp:v}))} /><FieldEdit label="Cidade" value={draft.city} onChange={(v) => setDraft((d) => ({...d, city:v}))} /><FieldEdit label="Telefone" value={draft.phone} onChange={(v) => setDraft((d) => ({...d, phone:v}))} /><FieldEdit label="E-mail" value={draft.email} onChange={(v) => setDraft((d) => ({...d, email:v}))} /></div><Button variant="quiet" size="sm" className="mt-4" onClick={() => void saveProfile()}>Salvar alterações</Button></SettingsCard>
       <ServiceCatalogSettings settings={settings} onSettings={onSettings} />
       <MfaSettings />
       <VaultSettings settings={settings} vaultKey={vaultKey} onVaultKey={onVaultKey} onSettings={onSettings} />
-      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">Controle de acesso:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> cada abertura de prontuário exige um novo código do aplicativo autenticador.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o sistema armazena somente o conteúdo cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha do cofre não é salva no sistema. Sem ela, o conteúdo cifrado não pode ser recuperado.</p></div></SettingsCard>
+      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">Controle de acesso:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> cada abertura de prontuário exige um novo código do aplicativo autenticador.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o sistema armazena somente o conteúdo cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha não é salva no sistema. A recuperação depende do código de recuperação gerado para a profissional.</p></div></SettingsCard>
     </div>
     {message && <p className="mt-4 text-xs text-primary">{message}</p>}
   </>;
@@ -844,6 +901,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
   const [message, setMessage] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recovering, setRecovering] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   const [recoveryInput, setRecoveryInput] = useState("");
   const [newPass, setNewPass] = useState("");
   const [confirmNewPass, setConfirmNewPass] = useState("");
@@ -963,6 +1021,37 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
     }
   };
 
+  const changePassword = async () => {
+    if (!vaultKey) { setMessage("Desbloqueie o cofre antes de trocar a senha."); return; }
+    if (!newPass || newPass !== confirmNewPass) {
+      setMessage(!newPass ? "Informe a nova senha do cofre." : "As novas senhas não coincidem.");
+      return;
+    }
+    setVaultBusy(true);
+    setMessage("");
+    try {
+      // A chave que cifra as evoluções não muda. Apenas o envelope protegido pela senha
+      // é recriado; assim trocar a senha não exige recriptografar prontuários.
+      const passwordEnvelope = await createPasswordEnvelope(vaultKey, newPass);
+      const saved = await saveAppSettings({
+        vault_version: 3,
+        vault_password_salt: passwordEnvelope.salt,
+        vault_password_key_ciphertext: passwordEnvelope.ciphertext,
+        vault_password_key_iv: passwordEnvelope.iv,
+      });
+      onSettings(saved);
+      setNewPass("");
+      setConfirmNewPass("");
+      setChangingPassword(false);
+      setMessage("Senha do cofre alterada com sucesso.");
+    } catch (error) {
+      console.error("Falha ao trocar senha do cofre", error);
+      setMessage(vaultOperationErrorMessage(error, "redefinir"));
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
   const regenerateRecovery = async () => {
     if (!vaultKey) return;
     try {
@@ -999,10 +1088,17 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
           <input type="password" value={confirmNewPass} onChange={(e) => setConfirmNewPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a nova senha" autoComplete="new-password" />
           <div className="flex flex-wrap gap-2"><Button variant="dashboard" onClick={() => void recover()}>Redefinir senha do cofre</Button><Button variant="ghost" onClick={() => setRecovering(false)}>Cancelar</Button></div>
         </div>
+      ) : changingPassword ? (
+        <div className="space-y-3">
+          <p className="text-xs leading-5 text-muted-foreground">Defina a nova senha do cofre. As evoluções existentes permanecem criptografadas e o código de recuperação atual continua válido.</p>
+          <input type="password" value={newPass} onChange={(e) => setNewPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Nova senha do cofre" autoComplete="new-password" />
+          <input type="password" value={confirmNewPass} onChange={(e) => setConfirmNewPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Repita a nova senha" autoComplete="new-password" />
+          <div className="flex flex-wrap gap-2"><Button variant="dashboard" disabled={vaultBusy} onClick={() => void changePassword()}>{vaultBusy ? "Alterando..." : "Salvar nova senha"}</Button><Button variant="ghost" onClick={() => { setChangingPassword(false); setNewPass(""); setConfirmNewPass(""); setMessage(""); }}>Cancelar</Button></div>
+        </div>
       ) : vaultKey ? (
         <div className="space-y-3">
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs text-primary"><Check className="mr-2 inline size-4" /> Cofre desbloqueado nesta sessão</div>
-          <Button variant="quiet" size="sm" onClick={() => void regenerateRecovery()}>Gerar novo código de recuperação</Button>
+          <div className="flex flex-wrap gap-2"><Button variant="dashboard" size="sm" onClick={() => { setChangingPassword(true); setMessage(""); }}>Trocar senha do cofre</Button><Button variant="quiet" size="sm" onClick={() => void regenerateRecovery()}>Gerar novo código de recuperação</Button></div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -1020,14 +1116,17 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   const requestId = useRef(crypto.randomUUID()).current;
   const sessionServices = services.filter((service) => service.active && service.kind === "session");
   const [name, setName] = useState(patient?.full_name ?? "");
+  const [cpf, setCpf] = useState(formatCpf(patient?.cpf));
   const [phone, setPhone] = useState(patient?.phone ?? "");
   const [email, setEmail] = useState(patient?.email ?? "");
   const [active, setActive] = useState(patient?.active ?? true);
   const [billing, setBilling] = useState<"session"|"package">(patient?.billing_model ?? "session");
   const [sessionAmount, setSessionAmount] = useState(patient?.session_amount?.toString().replace(".", ",") ?? "");
   const [packageAmount, setPackageAmount] = useState(patient?.package_amount?.toString().replace(".", ",") ?? "");
-  const [timing, setTiming] = useState<"current_month"|"next_month">(patient?.package_timing ?? "current_month");
-  const [day, setDay] = useState(patient?.billing_day ?? 5);
+  const [packagePaymentMode, setPackagePaymentMode] = useState<"single" | "installments">(patient?.package_payment_mode ?? "single");
+  const [packageInstallments, setPackageInstallments] = useState(patient?.package_installments ?? 2);
+  const [packageFirstDueDate, setPackageFirstDueDate] = useState(patient?.package_first_due_date ?? isoDateLocal());
+  const packagePlanRequestId = useRef(crypto.randomUUID()).current;
   const [notes, setNotes] = useState(patient?.notes_admin ?? "");
   const [scheduleNow, setScheduleNow] = useState(false);
   const [sessionServiceId, setSessionServiceId] = useState(sessionServices[0]?.id ?? "");
@@ -1051,24 +1150,46 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
     if (checked && futureSlots.length === 0) setFutureSlots([{ id: crypto.randomUUID(), when: nextSuggestedSlot() }]);
   };
 
+  const parsedPackageAmountPreview = Number(packageAmount.replace(",", ".")) || 0;
+  const effectiveInstallmentCount = packagePaymentMode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(packageInstallments || 2)));
+  const installmentPreview = packageInstallmentPreview(parsedPackageAmountPreview, effectiveInstallmentCount, packageFirstDueDate);
+
   const save = async () => {
     if (!name.trim()) return;
     const parsedSessionAmount = Number(sessionAmount.replace(",", ".")) || 0;
     const parsedPackageAmount = Number(packageAmount.replace(",", ".")) || 0;
     if (billing === "session" && parsedSessionAmount <= 0) { setError("Informe o valor padrão da sessão."); return; }
-    if (billing === "package" && parsedPackageAmount <= 0) { setError("Informe o valor do pacote."); return; }
+    if (billing === "package" && parsedPackageAmount <= 0) { setError("Informe o valor total do pacote/plano."); return; }
+    if (billing === "package" && !packageFirstDueDate) { setError("Informe a data do primeiro pagamento."); return; }
+    if (billing === "package" && packagePaymentMode === "installments" && (packageInstallments < 2 || packageInstallments > 60)) { setError("Informe entre 2 e 60 parcelas."); return; }
     setSaving(true); setError("");
     try {
-      const patch = {
-        full_name:name.trim(), phone:phone.trim()||null, email:email.trim()||null, active,
-        billing_model:billing,
-        session_amount:billing === "session" ? parsedSessionAmount : null,
-        package_amount:billing === "package" ? parsedPackageAmount : null,
-        package_timing:billing === "package" ? timing : null,
-        billing_day:billing === "package" ? day : null,
+      // Dados cadastrais e regra financeira são persistidos em etapas separadas. A configuração
+      // do pacote fica concentrada na RPC transacional; assim uma falha ao gerar parcelas não
+      // deixa package_amount/modelo atualizados sem as respectivas cobranças em A receber.
+      const basePatch = {
+        full_name:name.trim(), cpf:cpf||null, phone:phone.trim()||null, email:email.trim()||null, active,
         notes_admin:notes.trim()||null,
       };
-      const savedPatient = patient ? await updatePatient(patient.id, patch) : await createPatient(patch as Partial<PatientRow> & Pick<PatientRow,"full_name">, requestId);
+      const savedPatient = patient
+        ? await updatePatient(patient.id, basePatch)
+        : await createPatient({ ...basePatch, billing_model:"session", session_amount:billing === "session" ? parsedSessionAmount : null } as Partial<PatientRow> & Pick<PatientRow,"full_name">, requestId);
+
+      if (billing === "package") {
+        await savePatientPackagePlan({
+          patient_id: savedPatient.id,
+          total_amount: parsedPackageAmount,
+          payment_mode: packagePaymentMode,
+          installment_count: effectiveInstallmentCount,
+          first_due_date: packageFirstDueDate,
+          client_request_id: packagePlanRequestId,
+        });
+      } else {
+        if (patient?.billing_model === "package" || patient?.package_plan_id) await cancelPatientPackagePlan(savedPatient.id);
+        await updatePatient(savedPatient.id, {
+          billing_model:"session", session_amount:parsedSessionAmount, package_amount:null, package_timing:null, billing_day:null,
+        });
+      }
       if (scheduleNow) {
         const service = sessionServices.find((item) => item.id === sessionServiceId);
         if (!service) throw new Error("Cadastre um serviço de sessão antes de agendar.");
@@ -1102,15 +1223,22 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
     <ModalHeader title={patient ? "Editar paciente" : "Novo paciente"} subtitle="Dados administrativos, cobrança e próximas sessões." onClose={onClose} />
     <div className="grid gap-4 p-5 sm:grid-cols-2">
       <FieldEdit label="Nome completo" value={name} onChange={setName} />
+      <FieldEdit label="CPF" value={cpf} onChange={(value) => setCpf(formatCpf(value))} />
       <FieldEdit label="WhatsApp" value={phone} onChange={setPhone} />
       <FieldEdit label="E-mail" value={email} onChange={setEmail} />
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={active ? "active":"paused"} onChange={(e)=>setActive(e.target.value === "active")} className="input-finance"><option value="active">Ativo</option><option value="paused">Pausado</option></select></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Cobrança</span><select value={billing} onChange={(e)=>setBilling(e.target.value as "session"|"package")} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote mensal</option></select></label>
       {billing === "session" && <FieldEdit label="Valor padrão da sessão" value={sessionAmount} onChange={setSessionAmount} />}
       {billing === "package" && <>
-        <FieldEdit label="Valor do pacote" value={packageAmount} onChange={setPackageAmount} />
-        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Quando cobrar</span><select value={timing} onChange={(e)=>setTiming(e.target.value as "current_month"|"next_month")} className="input-finance"><option value="current_month">Início do próprio mês</option><option value="next_month">Início do mês seguinte</option></select></label>
-        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Dia</span><input type="number" min={1} max={28} value={day} onChange={(e)=>setDay(Number(e.target.value))} className="input-finance" /></label>
+        <FieldEdit label="Valor total do pacote / plano" value={packageAmount} onChange={setPackageAmount} />
+        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select value={packagePaymentMode} onChange={(e)=>setPackagePaymentMode(e.target.value as "single" | "installments")} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></label>
+        {packagePaymentMode === "installments" && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Número de parcelas</span><input type="number" min={2} max={60} value={packageInstallments} onChange={(e)=>setPackageInstallments(Number(e.target.value))} className="input-finance" /></label>}
+        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">{packagePaymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}</span><input type="date" value={packageFirstDueDate} onChange={(e)=>setPackageFirstDueDate(e.target.value)} className="input-finance" /></label>
+        <div className="sm:col-span-2 rounded-2xl border border-border bg-background/45 p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Cobranças que irão para A receber</p>
+          {installmentPreview.length > 0 ? <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">{installmentPreview.map((installment)=><div key={installment.number} className="flex items-center justify-between gap-3 rounded-xl bg-card/70 px-3 py-2 text-xs"><span>{packagePaymentMode === "single" ? "Pagamento único" : `Parcela ${installment.number}/${installmentPreview.length}`} • {dateLabel(installment.dueDate)}</span><strong>{money(installment.amount)}</strong></div>)}</div> : <p className="mt-2 text-[10px] text-muted-foreground">Informe o valor e a data de pagamento para visualizar as cobranças.</p>}
+          <p className="mt-3 text-[10px] leading-4 text-muted-foreground">Ao salvar, cada parcela será criada automaticamente como cobrança pendente em A receber e ficará vinculada a este paciente e ao pacote/plano.</p>
+        </div>
       </>}
 
       <div className="sm:col-span-2 rounded-2xl border border-border bg-background/45 p-4">
@@ -1153,6 +1281,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
   const [serviceId, setServiceId] = useState(initialServiceId);
   const [amount, setAmount] = useState(String(appointment?.amount ?? ""));
   const [paymentReceived, setPaymentReceived] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
   const [currentPayment, setCurrentPayment] = useState<AppointmentPaymentRow | null>(null);
   const [notes, setNotes] = useState(appointment?.notes_admin ?? "");
   const [saving, setSaving] = useState(false);
@@ -1172,6 +1301,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
       if (!active) return;
       setCurrentPayment(payment);
       setPaymentReceived(payment?.status === "paid");
+      if (payment?.payment_method) setPaymentMethod(payment.payment_method);
     }).catch(() => undefined);
     return () => { active = false; };
   }, [appointment]);
@@ -1219,7 +1349,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
       const payload = { patient_id:patientId||null, patient_name:name.trim(), scheduled_at:parsed.toISOString(), duration_minutes:duration, modality, status, service_kind:selectedService.kind, service_name:selectedService.name, amount:numericAmount, notes_admin:notes.trim()||null };
       const saved = appointment ? await updateAppointment(appointment.id, payload) : await createAppointment(payload as Omit<AppointmentRow, "id" | "created_at">, requestId);
       stage = "payment";
-      if (paymentReceived && canCharge && currentPayment?.status !== "paid") await markAppointmentPaid(saved.id);
+      if (paymentReceived && canCharge && currentPayment?.status !== "paid") await markAppointmentPaid(saved.id, paymentMethod);
       stage = "refresh";
       await onSaved();
     } catch (saveError) {
@@ -1262,6 +1392,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
             {isPackageSession ? <option value="package">Incluído no pacote</option> : !canCharge ? <option value="none">Sem cobrança</option> : <><option value="pending">A receber</option>{currentPayment?.status === "partial" && <option value="partial">Parcial</option>}<option value="paid">Recebido</option></>}
           </select>
         </label>
+        {paymentReceived && canCharge && !paymentLocked && <label className="mt-3 block"><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select className="input-finance" value={paymentMethod} onChange={(e)=>setPaymentMethod(e.target.value as PaymentMethod)}>{Object.entries(paymentMethodLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}
         <p className="mt-2 text-[10px] leading-4 text-muted-foreground">{isPackageSession ? "Esta sessão está coberta pelo pacote do paciente e não gera cobrança individual." : paymentLocked ? "Pagamento já registrado no Financeiro." : paymentReceived ? "Ao salvar, o valor será registrado como recebido no Financeiro." : currentPayment?.status === "partial" ? `Pagamento parcial registrado. Falta receber ${money(Math.max(0, Number(currentPayment.amount) - Number(currentPayment.received_amount || 0)))}.` : canCharge ? `O valor de ${money(numericAmount)} ficará na carteira a receber até a baixa.` : "Informe um valor e mantenha o atendimento ativo para gerar a cobrança."}</p>
       </div>
 
