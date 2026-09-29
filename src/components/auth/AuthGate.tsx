@@ -87,6 +87,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [secret, setSecret] = useState("");
   const failedLogins = useRef(0);
   const blockedUntil = useRef(0);
+  // Mantém a senha temporária somente em memória durante o primeiro acesso.
+  // Nunca é persistida em storage ou enviada ao banco além do login normal do Supabase.
+  const temporaryPasswordRef = useRef("");
 
   const resolveMfa = useCallback(async () => {
     if (!supabase) return;
@@ -412,6 +415,58 @@ export function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
+  // Contas criadas a partir desta versão recebem `must_change_password=true` por trigger
+  // no Supabase. Assim o responsável pode entregar uma senha temporária para a Ana sem
+  // deixar essa senha como credencial definitiva. A troca ocorre antes do uso do sistema.
+  if (isSupabaseConfigured && user && authMode === "login" && user.user_metadata?.["must_change_password"] === true) {
+    const saveFirstPassword = async () => {
+      if (!supabase) return;
+      if (!password || password !== confirmPassword) {
+        setError("Digite a nova senha e repita exatamente o mesmo valor.");
+        return;
+      }
+      if (temporaryPasswordRef.current && password === temporaryPasswordRef.current) {
+        setError("A nova senha deve ser diferente da senha temporária usada para entrar.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      const nextMetadata = { ...user.user_metadata, must_change_password: false, password_changed_at: new Date().toISOString() };
+      const { data, error: updateError } = await supabase.auth.updateUser({ password, data: nextMetadata });
+      if (updateError || !data.user) {
+        const message = updateError?.message?.toLowerCase() ?? "";
+        setError(message.includes("password") ? "Não foi possível salvar a nova senha. Use uma senha diferente e tente novamente." : "Não foi possível concluir a troca obrigatória de senha.");
+        setSubmitting(false);
+        return;
+      }
+      temporaryPasswordRef.current = "";
+      setPassword("");
+      setConfirmPassword("");
+      setUser(data.user);
+      setNotice("Senha pessoal criada. Agora conclua a proteção da conta com o Google Authenticator.");
+      await resolveMfa();
+      setSubmitting(false);
+    };
+
+    return (
+      <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+        <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
+          <span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span>
+          <h1 className="mt-5 font-display text-2xl">Crie sua nova senha</h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Este é o primeiro acesso desta conta. A senha usada para entrar é temporária e deve ser substituída antes de usar o sistema.</p>
+          {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
+          <div className="mt-6 space-y-4">
+            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Nova senha</span><input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
+            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Repita a nova senha</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveFirstPassword(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
+          </div>
+          {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+          <Button variant="dashboard" className="mt-6 w-full" disabled={submitting || !password || !confirmPassword} onClick={() => void saveFirstPassword()}>{submitting ? "Salvando..." : "Definir minha senha"}</Button>
+          <Button variant="ghost" className="mt-2 w-full" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</Button>
+        </section>
+      </main>
+    );
+  }
+
   if (isSupabaseConfigured && !user) {
     const requestPasswordReset = async () => {
       if (!supabase || !email.trim()) {
@@ -445,6 +500,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         password,
         ...(captchaToken ? { options: { captchaToken } } : {}),
       };
+      temporaryPasswordRef.current = password;
       const { data, error: loginError } = await supabase.auth.signInWithPassword(credentials);
       setPassword("");
       setCaptchaToken("");

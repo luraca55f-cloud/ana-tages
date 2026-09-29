@@ -266,3 +266,11 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Cofres existentes precisam ser desbloqueados UMA VEZ após a v2.0.24 (senha atual ou código de recuperação) para ativar o envelope de recuperação por e-mail.
 - A recuperação por e-mail reduz o modelo anterior de “somente quem possui o código consegue recuperar”: quem controla simultaneamente a conta Supabase/MFA, o banco e o segredo do Worker pode tecnicamente recuperar a chave. Não voltar a prometer impossibilidade absoluta de acesso pelo desenvolvedor.
 - Documentos financeiros deixaram de usar `window.open()`. Recibo, nota de cobrança e resumo financeiro agora montam um DOM temporário na própria página e chamam `window.print()`, evitando bloqueio de pop-up. O usuário escolhe “Salvar como PDF” no diálogo do navegador.
+
+## v2.0.25 — Prestação de Serviço, primeiro acesso e documentos
+- Novo módulo **Prestação de Serviço** com financeiro próprio (`service_work_entries`). Ele é isolado de pacientes, sessões, `billing_entries`, `expenses`, Dashboard e Financeiro do consultório.
+- Cards compactos: Faturado, Recebido, A receber, Despesas, Lucro de caixa e Resultado previsto.
+- Contas criadas depois do SQL v2.0.25 recebem senha temporária: no primeiro login o usuário é obrigado a definir uma nova senha antes de continuar.
+- Recibo, nota de cobrança e resumo financeiro receberam layout A4 institucional mais limpo e legível.
+- A nova conta da Ana inicia sem dados visíveis por isolamento `owner_id`; a limpeza física da conta antiga é um passo opcional e separado para evitar exclusão acidental.
+

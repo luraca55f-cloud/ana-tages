@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   BadgeCheck,
+  BriefcaseBusiness,
   Bell,
   BookOpenText,
   CalendarDays,
@@ -39,6 +40,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Button } from "../components/ui/button";
 import { AuthGate, useAuth } from "../components/auth/AuthGate";
 import { FinanceDashboardMetrics, FinancePage as FinancePageV2, type FinanceTab } from "../features/finance/FinancePage";
+import { ServiceWorkPage } from "../features/service-work/ServiceWorkPage";
 import { paymentMethodLabels } from "../features/finance/documents";
 import type { PaymentMethod } from "../features/finance/types";
 import {
@@ -103,7 +105,7 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "TAGES | Consultório Anna" },
-      { name: "description", content: "Gestão segura de pacientes, agenda, sessões, financeiro, relatórios e materiais." },
+      { name: "description", content: "Gestão segura do consultório e módulo isolado de prestação de serviço." },
       { name: "robots", content: "noindex,nofollow,noarchive,nosnippet" },
     ],
   }),
@@ -114,7 +116,7 @@ function SecureConsultorioApp() {
   return <AuthGate><ConsultorioApp /></AuthGate>;
 }
 
-type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Relatórios" | "Materiais" | "Configurações";
+type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Prestação de Serviço" | "Relatórios" | "Materiais" | "Configurações";
 type QuickAction = "session" | "expense" | "revenue" | "patient";
 
 type PatientView = PatientRow & {
@@ -131,6 +133,7 @@ const navItems: Array<[ModuleKey, typeof LayoutDashboard]> = [
   ["Pacientes", Users],
   ["Sessões", Video],
   ["Financeiro", WalletCards],
+  ["Prestação de Serviço", BriefcaseBusiness],
   ["Relatórios", FileBarChart],
   ["Materiais", FileText],
   ["Configurações", Settings],
@@ -489,6 +492,7 @@ function ConsultorioApp() {
           {activeModule === "Pacientes" && <PatientsPage patients={patientViews} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
           {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} initialCreate={pendingQuickAction === "session"} onInitialCreateHandled={() => setPendingQuickAction(null)} />}
           {activeModule === "Financeiro" && <FinancePageV2 initialModal={pendingQuickAction === "expense" ? "expense" : pendingQuickAction === "revenue" ? "revenue" : null} onInitialModalHandled={() => setPendingQuickAction(null)} initialTab={pendingFinanceTab} onInitialTabHandled={() => setPendingFinanceTab(null)} />}
+          {activeModule === "Prestação de Serviço" && <ServiceWorkPage />}
           {activeModule === "Relatórios" && <ReportsPage />}
           {activeModule === "Materiais" && <MaterialsPage />}
           {activeModule === "Configurações" && <SettingsPage settings={settings} vaultKey={vaultKey} onVaultKey={setVaultKey} onSettings={(value) => setSettings(value)} />}

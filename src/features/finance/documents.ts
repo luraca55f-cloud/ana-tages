@@ -122,6 +122,24 @@ function validatePatient(patient: PatientIdentity) {
   }
 }
 
+
+function documentHeader(title: string, subtitle: string) {
+  return `<div class="brandbar">
+    <div class="brandmark">AK</div>
+    <div class="brandcopy"><strong>TAGES | Consultório Anna</strong><span>${escapeHtml(subtitle)}</span></div>
+    <div class="doclabel">${escapeHtml(title)}</div>
+  </div>
+  <div class="titleblock"><p class="kicker">DOCUMENTO FINANCEIRO</p><h1>${escapeHtml(title)}</h1></div>`;
+}
+
+function professionalSignature(profile: AppSettingsRow) {
+  return `<div class="signature-card">
+    <div class="signature-line"></div>
+    <p class="signature-name">${escapeHtml(profile.professional_name)}</p>
+    <p>CPF ${escapeHtml(formatCpf(profile.cpf))} &nbsp;•&nbsp; CRP ${escapeHtml(profile.crp)}</p>
+  </div>`;
+}
+
 function openPrintWindow(title: string, content: string) {
   // Evita depender de pop-ups: alguns navegadores bloqueiam window.open() mesmo quando
   // o clique parte de um botão. A impressão é preparada na própria página, acionada e
@@ -140,27 +158,45 @@ function openPrintWindow(title: string, content: string) {
   style.textContent = `
     #tages-print-root { display: none; }
     @media print {
-      @page { size: A4; margin: 18mm 16mm; }
+      @page { size: A4; margin: 14mm 14mm 16mm; }
       body > *:not(#tages-print-root) { display: none !important; }
-      #tages-print-root { display: block !important; color: #171717; font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.55; }
+      #tages-print-root { display: block !important; color: #24372d; font-family: "Segoe UI", Arial, sans-serif; font-size: 11.5px; line-height: 1.5; }
       #tages-print-root * { box-sizing: border-box; }
-      #tages-print-root .document { max-width: 180mm; margin: 0 auto; }
-      #tages-print-root h1 { margin: 0 0 24px; text-align: center; font-size: 18px; letter-spacing: .04em; }
-      #tages-print-root p { margin: 0 0 12px; }
-      #tages-print-root .meta { margin: 20px 0; padding: 14px 16px; border: 1px solid #d8d8d8; border-radius: 8px; }
-      #tages-print-root .meta p { margin: 4px 0; }
-      #tages-print-root .signature { margin-top: 42px; }
-      #tages-print-root .signature p { margin: 3px 0; }
-      #tages-print-root .muted { color: #555; }
+      #tages-print-root .document { max-width: 182mm; min-height: 250mm; margin: 0 auto; }
+      #tages-print-root .brandbar { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid #dbe2dc; border-radius:12px; background:#f7f8f5; }
+      #tages-print-root .brandmark { display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:#294536; color:#fff; font-family:Georgia,serif; font-weight:700; }
+      #tages-print-root .brandcopy { display:flex; flex-direction:column; flex:1; line-height:1.25; }
+      #tages-print-root .brandcopy strong { font-size:11px; }
+      #tages-print-root .brandcopy span { color:#6c766f; font-size:8.5px; margin-top:2px; }
+      #tages-print-root .doclabel { color:#294536; font-size:8px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+      #tages-print-root .titleblock { padding:24px 2px 12px; }
+      #tages-print-root .kicker { margin:0 0 4px; color:#7b827d; font-size:8px; font-weight:700; letter-spacing:.16em; }
+      #tages-print-root h1 { margin:0; color:#20382b; font-family:Georgia,"Times New Roman",serif; font-size:22px; font-weight:500; letter-spacing:0; text-align:left; }
+      #tages-print-root p { margin: 0 0 10px; }
+      #tages-print-root .lead { font-size:12.5px; line-height:1.65; color:#2c3731; }
+      #tages-print-root .meta { display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; margin:12px 0 18px; padding:14px 16px; border:1px solid #dbe2dc; border-radius:12px; background:#fbfcfa; }
+      #tages-print-root .meta p { margin:0; }
+      #tages-print-root .meta p strong { color:#526158; font-size:9px; text-transform:uppercase; letter-spacing:.03em; }
+      #tages-print-root .amount-box { margin:16px 0; padding:14px 16px; border-left:4px solid #294536; border-radius:0 12px 12px 0; background:#f2f5f1; }
+      #tages-print-root .amount-box span { display:block; color:#6c766f; font-size:9px; text-transform:uppercase; }
+      #tages-print-root .amount-box strong { display:block; margin-top:2px; font-family:Georgia,serif; font-size:19px; color:#20382b; }
+      #tages-print-root .signature-card { width:58%; margin-top:42px; padding-top:6px; color:#4f5c54; }
+      #tages-print-root .signature-line { width:72%; border-top:1px solid #859189; margin-bottom:8px; }
+      #tages-print-root .signature-card p { margin:2px 0; font-size:9.5px; }
+      #tages-print-root .signature-name { color:#20382b; font-size:11px !important; font-weight:700; }
+      #tages-print-root .muted { color: #6c766f; }
       #tages-print-root .right { text-align: right; }
-      #tages-print-root table { width: 100%; border-collapse: collapse; margin: 18px 0; }
-      #tages-print-root th, #tages-print-root td { border: 1px solid #d7d7d7; padding: 8px 9px; text-align: left; vertical-align: top; }
-      #tages-print-root th { background: #f3f3f3; font-size: 11px; }
-      #tages-print-root .totals { margin-top: 18px; border-top: 1px solid #d8d8d8; padding-top: 14px; }
-      #tages-print-root .totals p { margin: 4px 0; }
-      #tages-print-root .focus { background: #fffbe8; }
+      #tages-print-root table { width:100%; border-collapse:separate; border-spacing:0; margin:16px 0; border:1px solid #dbe2dc; border-radius:10px; overflow:hidden; }
+      #tages-print-root th, #tages-print-root td { border-bottom:1px solid #e5e9e5; padding:8px 9px; text-align:left; vertical-align:top; }
+      #tages-print-root tr:last-child td { border-bottom:0; }
+      #tages-print-root th { background:#f1f4f0; color:#526158; font-size:8.5px; letter-spacing:.05em; text-transform:uppercase; }
+      #tages-print-root .totals { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:16px; padding-top:14px; border-top:1px solid #dbe2dc; }
+      #tages-print-root .totals p { margin:0; padding:10px; border-radius:9px; background:#f7f8f5; }
+      #tages-print-root .focus { background:#f5f7ee; }
+      #tages-print-root .document-footer { margin-top:22px; padding-top:10px; border-top:1px solid #e1e6e1; color:#7b827d; font-size:8.5px; }
     }
   `;
+
 
   const previousTitle = document.title;
   const cleanup = () => {
@@ -211,20 +247,19 @@ export function printPaymentReceipt({
     : "";
 
   const content = `
-    <h1>RECIBO DE PAGAMENTO</h1>
-    <p>Declaro que recebi de <strong>${escapeHtml(patient.full_name)}</strong>, CPF nº <strong>${escapeHtml(formatCpf(patient.cpf))}</strong>, a importância de <strong>${escapeHtml(money(amount))} (${escapeHtml(amountInWordsBRL(amount))})</strong>, referente a <strong>${escapeHtml(cleanDescription(entry.description))}</strong>.</p>
+    ${documentHeader("Recibo de pagamento", "Comprovante de recebimento")}
+    <p class="lead">Declaro que recebi de <strong>${escapeHtml(patient.full_name)}</strong>, CPF nº <strong>${escapeHtml(formatCpf(patient.cpf))}</strong>, o valor abaixo referente a <strong>${escapeHtml(cleanDescription(entry.description))}</strong>.</p>
+    <div class="amount-box"><span>Valor recebido</span><strong>${escapeHtml(money(amount))}</strong><small>${escapeHtml(amountInWordsBRL(amount))}</small></div>
     <div class="meta">
       ${installment}
-      <p><strong>Data do pagamento:</strong> ${escapeHtml(dateLabel(entry.received_at))}</p>
-      <p><strong>Forma de pagamento:</strong> ${escapeHtml(method)}</p>
+      <p><strong>Data do pagamento</strong><br>${escapeHtml(dateLabel(entry.received_at))}</p>
+      <p><strong>Forma de pagamento</strong><br>${escapeHtml(method)}</p>
+      <p><strong>Paciente</strong><br>${escapeHtml(patient.full_name)}</p>
     </div>
-    <p>Para os devidos fins, emito o presente recibo como comprovante do pagamento acima identificado.</p>
-    <p style="margin-top:32px">${placeAndDate}</p>
-    <div class="signature">
-      <p><strong>${escapeHtml(profile.professional_name)}</strong></p>
-      <p>CPF: ${escapeHtml(formatCpf(profile.cpf))}</p>
-      <p>CRP: ${escapeHtml(profile.crp)}</p>
-    </div>`;
+    <p class="muted">Para os devidos fins, emito o presente recibo como comprovante do pagamento acima identificado.</p>
+    <p style="margin-top:24px">${placeAndDate}</p>
+    ${professionalSignature(profile)}
+    <div class="document-footer">Documento emitido pelo TAGES | Consultório Anna.</div>`;
   openPrintWindow(`Recibo - ${patient.full_name}`, content);
 }
 
@@ -244,25 +279,20 @@ export function printCollectionNotice({
   if (pending <= 0) throw new Error("Esta cobrança não possui valor pendente para emissão de nota de cobrança.");
   const emissionDate = dateLabel(new Date().toISOString().slice(0, 10));
   const content = `
-    <h1>NOTA DE COBRANÇA</h1>
+    ${documentHeader("Nota de cobrança", "Cobrança financeira pendente")}
     <div class="meta">
-      <p><strong>Paciente:</strong> ${escapeHtml(patient.full_name)}</p>
-      <p><strong>CPF:</strong> ${escapeHtml(formatCpf(patient.cpf))}</p>
-      <p><strong>Referente a:</strong> ${escapeHtml(cleanDescription(entry.description))}</p>
-      <p><strong>Parcela:</strong> ${escapeHtml(installmentLabel(entry))}</p>
-      <p><strong>Vencimento:</strong> ${escapeHtml(dateLabel(entry.due_date ?? entry.competence_date))}</p>
-      <p><strong>Valor da cobrança:</strong> ${escapeHtml(money(Number(entry.amount || 0)))}</p>
-      <p><strong>Valor já recebido:</strong> ${escapeHtml(money(Number(entry.received_amount || 0)))}</p>
-      <p><strong>Valor pendente:</strong> ${escapeHtml(money(pending))}</p>
-      <p><strong>Situação:</strong> ${escapeHtml(statusLabel(entry))}</p>
+      <p><strong>Paciente</strong><br>${escapeHtml(patient.full_name)}</p>
+      <p><strong>CPF</strong><br>${escapeHtml(formatCpf(patient.cpf))}</p>
+      <p><strong>Referente a</strong><br>${escapeHtml(cleanDescription(entry.description))}</p>
+      <p><strong>Parcela</strong><br>${escapeHtml(installmentLabel(entry))}</p>
+      <p><strong>Vencimento</strong><br>${escapeHtml(dateLabel(entry.due_date ?? entry.competence_date))}</p>
+      <p><strong>Situação</strong><br>${escapeHtml(statusLabel(entry))}</p>
     </div>
-    <p>Este documento registra, para fins de organização e acompanhamento financeiro, a cobrança pendente identificada acima.</p>
-    <p style="margin-top:26px"><strong>Data de emissão:</strong> ${escapeHtml(emissionDate)}</p>
-    <div class="signature">
-      <p><strong>${escapeHtml(profile.professional_name)}</strong></p>
-      <p>CPF: ${escapeHtml(formatCpf(profile.cpf))}</p>
-      <p>CRP: ${escapeHtml(profile.crp)}</p>
-    </div>`;
+    <div class="amount-box"><span>Valor pendente</span><strong>${escapeHtml(money(pending))}</strong><small>Cobrança: ${escapeHtml(money(Number(entry.amount || 0)))} • Recebido: ${escapeHtml(money(Number(entry.received_amount || 0)))}</small></div>
+    <p class="muted">Este documento registra, para fins de organização e acompanhamento financeiro, a cobrança pendente identificada acima.</p>
+    <p style="margin-top:24px"><strong>Data de emissão:</strong> ${escapeHtml(emissionDate)}</p>
+    ${professionalSignature(profile)}
+    <div class="document-footer">Documento emitido pelo TAGES | Consultório Anna.</div>`;
   openPrintWindow(`Nota de cobrança - ${patient.full_name}`, content);
 }
 
@@ -304,29 +334,25 @@ export function printFinancialSummary({
   const emissionDate = dateLabel(new Date().toISOString().slice(0, 10));
 
   const content = `
-    <h1>RESUMO FINANCEIRO</h1>
+    ${documentHeader("Resumo financeiro", "Acompanhamento de cobranças e pagamentos")}
     <div class="meta">
-      <p><strong>Paciente:</strong> ${escapeHtml(patient.full_name)}</p>
-      <p><strong>CPF:</strong> ${escapeHtml(formatCpf(patient.cpf))}</p>
-      <p><strong>Referente a:</strong> ${escapeHtml(cleanDescription(first.description))}</p>
-      <p><strong>Valor total:</strong> ${escapeHtml(money(total))}</p>
-      <p><strong>Quantidade de parcelas:</strong> ${escapeHtml(totalInstallments)}</p>
+      <p><strong>Paciente</strong><br>${escapeHtml(patient.full_name)}</p>
+      <p><strong>CPF</strong><br>${escapeHtml(formatCpf(patient.cpf))}</p>
+      <p><strong>Referente a</strong><br>${escapeHtml(cleanDescription(first.description))}</p>
+      <p><strong>Quantidade de parcelas</strong><br>${escapeHtml(totalInstallments)}</p>
     </div>
-    <p>Este documento apresenta, para fins de organização e acompanhamento financeiro, os valores e as respectivas datas relacionados ao atendimento ou pacote informado acima.</p>
+    <p class="muted">Valores e datas relacionados ao atendimento ou pacote selecionado.</p>
     <table>
-      <thead><tr><th>Parcela</th><th>Valor</th><th>Data de pagamento / vencimento</th><th>Situação</th></tr></thead>
+      <thead><tr><th>Parcela</th><th>Valor</th><th>Pagamento / vencimento</th><th>Situação</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="totals">
-      <p><strong>Valor total:</strong> ${escapeHtml(money(total))}</p>
-      <p><strong>Valor recebido:</strong> ${escapeHtml(money(received))}</p>
-      <p><strong>Valor a receber:</strong> ${escapeHtml(money(toReceive))}</p>
+      <p><strong>Valor total</strong><br>${escapeHtml(money(total))}</p>
+      <p><strong>Valor recebido</strong><br>${escapeHtml(money(received))}</p>
+      <p><strong>Valor a receber</strong><br>${escapeHtml(money(toReceive))}</p>
     </div>
-    <p style="margin-top:26px"><strong>Data de emissão:</strong> ${escapeHtml(emissionDate)}</p>
-    <div class="signature">
-      <p><strong>${escapeHtml(profile.professional_name)}</strong></p>
-      <p>CPF: ${escapeHtml(formatCpf(profile.cpf))}</p>
-      <p>CRP: ${escapeHtml(profile.crp)}</p>
-    </div>`;
+    <p style="margin-top:24px"><strong>Data de emissão:</strong> ${escapeHtml(emissionDate)}</p>
+    ${professionalSignature(profile)}
+    <div class="document-footer">Documento emitido pelo TAGES | Consultório Anna.</div>`;
   openPrintWindow(`Resumo financeiro - ${patient.full_name}`, content);
 }

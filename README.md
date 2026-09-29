@@ -1,7 +1,7 @@
 
-> **v2.0.23:** correção exclusiva de build/typecheck sobre a v2.0.22 completa. Não exige SQL adicional.
+> **v2.0.25:** Prestação de Serviço isolada, primeiro acesso com troca obrigatória de senha e documentos financeiros redesenhados.
 
-# TAGES CONSULTORIA ANNA — v2.0.22
+# TAGES CONSULTORIA ANNA — v2.0.25
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 
@@ -188,3 +188,11 @@ Esta etapa não possui SQL novo. Os SQLs das Partes 1 e 2 continuam acumulados e
 - Requer SQL incremental `SQL/06 - Parte 6 - Recuperacao do cofre por email e PDFs/SQL_ATUALIZACAO_ANA_TAGES_v2.0.24.sql`.
 - Requer Secret de runtime no Cloudflare Worker: `VAULT_RECOVERY_SECRET` (mín. 32 caracteres, sem prefixo `VITE_`).
 - Recibo, nota de cobrança e resumo financeiro imprimem pela própria página, sem depender de pop-up; no diálogo do navegador escolha “Salvar como PDF”.
+
+## v2.0.25 — Prestação de Serviço, primeiro acesso e documentos
+- Novo módulo **Prestação de Serviço** com financeiro próprio (`service_work_entries`). Ele é isolado de pacientes, sessões, `billing_entries`, `expenses`, Dashboard e Financeiro do consultório.
+- Cards compactos: Faturado, Recebido, A receber, Despesas, Lucro de caixa e Resultado previsto.
+- Contas criadas depois do SQL v2.0.25 recebem senha temporária: no primeiro login o usuário é obrigado a definir uma nova senha antes de continuar.
+- Recibo, nota de cobrança e resumo financeiro receberam layout A4 institucional mais limpo e legível.
+- A nova conta da Ana inicia sem dados visíveis por isolamento `owner_id`; a limpeza física da conta antiga é um passo opcional e separado para evitar exclusão acidental.
+

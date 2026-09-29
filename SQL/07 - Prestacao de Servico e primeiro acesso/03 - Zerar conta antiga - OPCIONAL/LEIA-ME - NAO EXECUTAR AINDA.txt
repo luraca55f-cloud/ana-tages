@@ -1,0 +1,8 @@
+NÃO execute este passo junto com os SQLs 01 e 02.
+
+A nova conta da Ana já abre zerada porque todos os dados do sistema são isolados por owner_id.
+
+Quando a conta da Ana estiver criada, testada e funcionando, a conta antiga poderá ser limpa antes da exclusão.
+A exclusão definitiva da conta antiga deve ser feita somente depois de confirmar que a Ana acessou normalmente.
+
+O pacote não executa limpeza automática para evitar apagar dados por engano.

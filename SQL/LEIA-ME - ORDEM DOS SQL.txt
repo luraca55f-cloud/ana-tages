@@ -1,17 +1,22 @@
-ANA TAGES — SQL DO PACOTE v2.0.24
+ANA TAGES — SQL DO PACOTE v2.0.25
 
-SE VOCÊ JÁ EXECUTOU OS SQLs DA v2.0.22:
-Execute SOMENTE:
-06 - Parte 6 - Recuperacao do cofre por email e PDFs/SQL_ATUALIZACAO_ANA_TAGES_v2.0.24.sql
+SE A v2.0.24 JÁ ESTÁ FUNCIONANDO:
+Execute SOMENTE os SQLs novos da pasta 07, nesta ordem:
+
+1) 07 - Prestacao de Servico e primeiro acesso/01 - Estrutura Prestacao de Servico/SQL_01_ESTRUTURA_PRESTACAO_SERVICO_v2.0.25.sql
+2) 07 - Prestacao de Servico e primeiro acesso/02 - Primeiro acesso - senha temporaria/SQL_02_TROCA_OBRIGATORIA_PRIMEIRO_ACESSO_v2.0.25.sql
+
+NÃO EXECUTE AGORA:
+- 07/.../03 - Zerar conta antiga - OPCIONAL
+  Esse passo é somente para depois que a conta da Ana estiver criada e testada.
 
 NÃO EXECUTE NOVAMENTE:
-00 - Historico - nao executar novamente
-01 - Parte 1 - Dados profissionais e CPF
-02 - Parte 2 - Pacotes e parcelamento
-05 - Parte 5 - Recibos e documentos financeiros
+- 00 - Historico
+- 01 - Parte 1
+- 02 - Parte 2
+- 05 - Parte 5
+- 06 - Parte 6
 
 As partes 03 e 04 não possuem SQL.
-
-IMPORTANTE:
-- Não execute a migration inicial do projeto.
-- A v2.0.24 também exige o segredo VAULT_RECOVERY_SECRET no Cloudflare Worker.
+Não execute a migration inicial.
+O Secret VAULT_RECOVERY_SECRET da v2.0.24 deve continuar configurado no Cloudflare.

@@ -1,0 +1,10 @@
+ANA TAGES v2.0.25
+
+EXECUTAR AGORA, NESTA ORDEM:
+1) 01 - Estrutura Prestacao de Servico / SQL_01_ESTRUTURA_PRESTACAO_SERVICO_v2.0.25.sql
+2) 02 - Primeiro acesso - senha temporaria / SQL_02_TROCA_OBRIGATORIA_PRIMEIRO_ACESSO_v2.0.25.sql
+
+NÃO EXECUTAR AGORA:
+3) 03 - Zerar conta antiga - OPCIONAL
+
+A conta nova da Ana fica visualmente zerada automaticamente porque o banco é isolado por usuário (owner_id).

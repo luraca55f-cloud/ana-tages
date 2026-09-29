@@ -1,35 +1,10 @@
-ANA TAGES v2.0.24 — RELATÓRIO DE VALIDAÇÃO
-Data: 29/09/2026
-Base: v2.0.23 completa (Partes 1–5 + correção de build)
+ANA TAGES v2.0.25 — validação local
 
-OBJETIVO
-1. Tornar a recuperação do cofre mais simples por e-mail cadastrado + Google Authenticator.
-2. Corrigir Recibo / Nota de cobrança / Resumo financeiro que dependiam de pop-up e podiam não abrir.
+OK - scripts/verify-project.mjs: 24 arquivos de fonte; imports/dependências locais conferidos.
+OK - parser TypeScript/TSX: todos os arquivos TS/TSX sem erro sintático.
+OK - pacote não contém .git, GIT, node_modules ou package-lock.json.
+OK - Prestação de Serviço usa tabela/repositório próprios; não consulta billing_entries/expenses do consultório.
+OK - primeiro acesso usa flag de metadado definida automaticamente para contas criadas após o SQL v2.0.25.
+OK - documentos financeiros continuam usando impressão nativa do navegador, agora com layout A4 institucional.
 
-ALTERAÇÕES PRINCIPAIS
-- Novo fluxo de recuperação do cofre por e-mail da própria conta Supabase; não existe campo para informar outro e-mail.
-- Link de e-mail usa PKCE; após o link o Google Authenticator/AAL2 continua obrigatório.
-- Worker ganhou endpoints /api/vault-email-recovery/provision e /recover, ambos protegidos por token Supabase validado e AAL2.
-- A chave clínica é encapsulada por AES-GCM com Secret de runtime VAULT_RECOVERY_SECRET; somente ciphertext/IV são persistidos no Supabase.
-- Código de recuperação antigo permanece como fallback.
-- Cofres existentes são provisionados para e-mail no primeiro desbloqueio após a atualização.
-- Documentos financeiros passaram a imprimir na própria página via window.print(), sem window.open/pop-up.
-
-SQL
-SIM — somente o incremental da pasta 06 para quem já executou a v2.0.22.
-
-CLOUDFLARE
-SIM — configurar Secret de runtime VAULT_RECOVERY_SECRET com pelo menos 32 caracteres, sem prefixo VITE_.
-
-VALIDAÇÕES LOCAIS
-- scripts/verify-project.mjs: OK — 21 arquivos de fonte; imports locais e dependências declaradas conferidos.
-- Parse/transpile TypeScript: OK — 20 arquivos TS/TSX sem erro de sintaxe.
-- server.ts + utilitários: typecheck isolado com TypeScript 5.x e stubs de dependência externa: OK.
-- crypto.ts: typecheck isolado estrito: OK.
-- documents.ts + tipos financeiros/clínicos: typecheck isolado estrito: OK.
-- Nenhuma pasta .git/GIT ou node_modules deve ser incluída no ZIP final.
-
-OBSERVAÇÃO DE SEGURANÇA
-A recuperação por e-mail altera a garantia do modelo anterior: o Worker participa do escrow criptográfico da chave. O código separado continua disponível como contingência, mas não afirmar mais que nem o operador/desenvolvedor poderia recuperar dados sob qualquer hipótese.
-
-Commit sugerido: Adicionar recuperação do cofre por email e corrigir PDFs v2.0.24
+Observação: o typecheck completo com dependências não pôde ser executado no contêiner local porque o acesso ao registry NPM está indisponível neste ambiente. O build do Cloudflare executa npm run build, incluindo tsc --noEmit.

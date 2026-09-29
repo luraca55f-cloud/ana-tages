@@ -94,3 +94,11 @@ Antes do push da v2.0.19, leia `SQL/LEIA-ME - ORDEM DOS SQL.txt`.
 Após executar o SQL v2.0.24 e antes de testar a recuperação por e-mail, configure no Worker `ana-tages` um Secret de runtime chamado `VAULT_RECOVERY_SECRET`, com valor aleatório forte de pelo menos 32 caracteres. Não use prefixo `VITE_` e não salve esse valor no GitHub.
 
 Depois do deploy, desbloqueie o cofre uma vez com a senha atual (ou, se necessário, com o código de recuperação antigo). Esse primeiro desbloqueio cria o envelope necessário para as próximas recuperações por e-mail.
+
+## v2.0.25 — Prestação de Serviço, primeiro acesso e documentos
+- Novo módulo **Prestação de Serviço** com financeiro próprio (`service_work_entries`). Ele é isolado de pacientes, sessões, `billing_entries`, `expenses`, Dashboard e Financeiro do consultório.
+- Cards compactos: Faturado, Recebido, A receber, Despesas, Lucro de caixa e Resultado previsto.
+- Contas criadas depois do SQL v2.0.25 recebem senha temporária: no primeiro login o usuário é obrigado a definir uma nova senha antes de continuar.
+- Recibo, nota de cobrança e resumo financeiro receberam layout A4 institucional mais limpo e legível.
+- A nova conta da Ana inicia sem dados visíveis por isolamento `owner_id`; a limpeza física da conta antiga é um passo opcional e separado para evitar exclusão acidental.
+
