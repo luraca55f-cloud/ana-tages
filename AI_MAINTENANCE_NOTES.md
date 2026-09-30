@@ -273,4 +273,9 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Contas criadas depois do SQL v2.0.25 recebem senha temporária: no primeiro login o usuário é obrigado a definir uma nova senha antes de continuar.
 - Recibo, nota de cobrança e resumo financeiro receberam layout A4 institucional mais limpo e legível.
 - A nova conta da Ana inicia sem dados visíveis por isolamento `owner_id`; a limpeza física da conta antiga é um passo opcional e separado para evitar exclusão acidental.
+## v2.0.26 — correção de build do primeiro acesso
+- Corrigido `TS18047` em `AuthGate.tsx` no botão **Sair** da tela de troca obrigatória de senha.
+- O clique agora verifica explicitamente se o cliente Supabase existe antes de chamar `auth.signOut`, preservando o comportamento e compatibilidade com `strictNullChecks`.
+- Nenhuma regra de banco, MFA, primeiro acesso, Prestação de Serviço ou recuperação do cofre foi alterada.
+- SQL: não.
 

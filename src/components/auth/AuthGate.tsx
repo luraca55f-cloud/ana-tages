@@ -461,7 +461,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </div>
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
           <Button variant="dashboard" className="mt-6 w-full" disabled={submitting || !password || !confirmPassword} onClick={() => void saveFirstPassword()}>{submitting ? "Salvando..." : "Definir minha senha"}</Button>
-          <Button variant="ghost" className="mt-2 w-full" onClick={() => void supabase.auth.signOut({ scope: "local" })}>Sair</Button>
+          <Button
+            variant="ghost"
+            className="mt-2 w-full"
+            onClick={() => {
+              // O cliente pode ser nulo em builds sem Supabase configurado.
+              // Embora esta tela só seja exibida com autenticação ativa, a guarda
+              // explícita mantém o fluxo seguro e satisfaz o strict null checking.
+              if (supabase) void supabase.auth.signOut({ scope: "local" });
+            }}
+          >
+            Sair
+          </Button>
         </section>
       </main>
     );

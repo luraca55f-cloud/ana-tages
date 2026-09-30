@@ -1,3 +1,5 @@
+> Versão atual: **v2.0.26**
+
 
 > **v2.0.25:** Prestação de Serviço isolada, primeiro acesso com troca obrigatória de senha e documentos financeiros redesenhados.
 
