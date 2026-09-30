@@ -1,5 +1,15 @@
-ANA TAGES v2.0.29
-- Alteração: requisitos visíveis e validação da nova senha no primeiro acesso e recuperação.
-- Alteração: botão mostrar/ocultar senha em login, primeiro acesso e recuperação.
-- SQL novo: NÃO.
-- SQL 09 no pacote: revisão mais recente de homologação de primeiro acesso.
+ANA TAGES v2.0.30 — VALIDATION REPORT
+
+Base: v2.0.29.
+Correção: AuthGate.tsx / PasswordRequirements.
+Motivo: Cloudflare typecheck TS2375 com exactOptionalPropertyTypes ao enviar temporaryPassword=undefined.
+Correção aplicada: a prop optional temporaryPassword somente é incluída quando existe valor real.
+
+Verificações realizadas neste pacote:
+- scripts/verify-project.mjs: OK — 27 arquivos de fonte verificados.
+- estrutura/imports locais/dependências declaradas: OK.
+- ausência de pasta .git: OK.
+- ausência de node_modules: OK.
+- SQL: sem alteração nesta versão.
+
+Observação: o ambiente de empacotamento não possui o conjunto local de dependências do projeto e não conseguiu instalar o registry para executar o typecheck completo aqui. A alteração corrige exatamente o único erro TS2375 reportado pelo build Cloudflare da v2.0.29.

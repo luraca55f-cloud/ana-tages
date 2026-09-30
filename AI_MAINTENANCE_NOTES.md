@@ -302,3 +302,10 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - A tela mostra os requisitos em tempo real para a pessoa saber exatamente o que ainda falta cumprir antes de salvar.
 - Campos de senha de login, primeiro acesso e recuperação ganharam botão de mostrar/ocultar senha (ícone de olho), com `aria-label` para acessibilidade.
 - Nenhuma alteração de banco nesta versão. O SQL 09 incluído no pacote é a revisão mais recente de homologação, que remove MFA antigo para simular uma conta realmente nova.
+
+
+## v2.0.30 — correção de typecheck dos requisitos de senha
+- Corrigido `TS2375` em `AuthGate.tsx` causado por `exactOptionalPropertyTypes`: a prop opcional `temporaryPassword` agora só é enviada a `PasswordRequirements` quando há valor real.
+- Mantidos sem alteração os requisitos da v2.0.29: mínimo 8 caracteres, 1 letra, 1 número, senha diferente da temporária e confirmação idêntica, além dos botões de mostrar/ocultar senha.
+- Nenhuma alteração de banco, MFA, primeiro acesso ou SQL nesta versão.
+- Commit sugerido: `Corrigir typecheck dos requisitos de senha v2.0.30`.

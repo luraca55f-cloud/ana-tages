@@ -582,7 +582,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
                 <button type="button" className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-foreground" onClick={() => setShowConfirmPassword((current) => !current)} aria-label={showConfirmPassword ? "Ocultar confirmação da senha" : "Mostrar confirmação da senha"} title={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}>{showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
               </span>
             </label>
-            <PasswordRequirements password={password} confirmPassword={confirmPassword} temporaryPassword={temporaryPasswordRef.current || undefined} />
+            <PasswordRequirements
+              password={password}
+              confirmPassword={confirmPassword}
+              {...(temporaryPasswordRef.current ? { temporaryPassword: temporaryPasswordRef.current } : {})}
+            />
           </div>
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
           <Button variant="dashboard" className="mt-6 w-full" disabled={submitting || !password || !confirmPassword} onClick={() => void saveFirstPassword()}>{submitting ? "Salvando..." : "Definir minha senha"}</Button>

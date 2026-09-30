@@ -211,3 +211,7 @@ Use `SQL/09 - Testar primeiro acesso como Ana` para homologar a conta única com
 
 ### v2.0.29
 A experiência de senha foi aprimorada: requisitos visíveis em tempo real (8+ caracteres, letra, número, confirmação e, no primeiro acesso, diferença da senha temporária) e botão de mostrar/ocultar senha nos campos de autenticação. Não há SQL novo nesta versão.
+
+
+### v2.0.30
+Correção de build/typecheck da interface de requisitos de senha. Sem alteração de SQL.
