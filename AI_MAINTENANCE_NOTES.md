@@ -279,3 +279,26 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Nenhuma regra de banco, MFA, primeiro acesso, Prestação de Serviço ou recuperação do cofre foi alterada.
 - SQL: não.
 
+
+
+## v2.0.27 — recuperação guiada do cofre + acesso técnico de uso
+- Cofres anteriores à recuperação por e-mail agora entram em um fluxo explícito de ativação única: senha atual OU código de recuperação. Depois da migração, a recuperação principal fica somente e-mail + Google Authenticator.
+- Não é possível recuperar uma chave clínica legada somente com e-mail/MFA sem uma prova antiga; a UI não deve prometer o contrário.
+- Novo papel `usage_monitor` em `auth.users.raw_app_meta_data`. Usuários com esse papel veem SOMENTE o painel Uso do Supabase.
+- O painel técnico usa a RPC `get_supabase_usage_snapshot()` e mostra apenas métricas agregadas: tamanho do banco, Storage, quantidade de arquivos e usuários Auth.
+- A futura conta da Ana não recebe `usage_monitor`; ela continua no fluxo normal do consultório e no primeiro acesso troca a senha temporária.
+- A limpeza opcional da conta técnica foi tornada genérica por papel e não deve conter e-mail pessoal hardcoded.
+
+## v2.0.28 — ensaio do primeiro acesso na conta atual
+- Adicionado SQL/09 para zerar a única conta do Auth e rearmar `must_change_password=true`, sem criar usuário de teste.
+- O SQL remove `tages_role` para que a conta usada no ensaio permaneça com acesso completo. Ele exige exatamente 1 usuário e é transacional.
+- O mesmo SQL pode ser executado novamente após a homologação para apagar os dados de teste antes da entrega real à Ana.
+- `AuthGate` agora suporta homologação com uma conta antiga que já possua TOTP verificado: confirma o fator existente/AAL2 antes de `updateUser(password)`. Contas realmente novas, sem fator, continuam trocando a senha temporária antes de cadastrar o Google Authenticator.
+- Não converter a conta da Ana em `usage_monitor`. O acesso técnico deve ser criado depois como usuário separado.
+
+## v2.0.29 — senha de primeiro acesso mais clara
+- A troca obrigatória de senha agora exige, no frontend, pelo menos 8 caracteres, 1 letra e 1 número.
+- No primeiro acesso, a nova senha também precisa ser diferente da senha temporária e a confirmação deve coincidir.
+- A tela mostra os requisitos em tempo real para a pessoa saber exatamente o que ainda falta cumprir antes de salvar.
+- Campos de senha de login, primeiro acesso e recuperação ganharam botão de mostrar/ocultar senha (ícone de olho), com `aria-label` para acessibilidade.
+- Nenhuma alteração de banco nesta versão. O SQL 09 incluído no pacote é a revisão mais recente de homologação, que remove MFA antigo para simular uma conta realmente nova.

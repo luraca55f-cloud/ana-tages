@@ -1,0 +1,16 @@
+ANA TAGES v2.0.28 — TESTAR A CONTA ATUAL COMO SE FOSSE A ANA
+
+1. Não execute os SQLs do monitor técnico agora.
+2. Execute SQL_01_ZERAR_E_REARMAR_PRIMEIRO_ACESSO_v2.0.28.sql.
+3. Saia completamente do sistema e abra uma janela anônima.
+4. Entre com o MESMO e-mail e a senha atual. Essa senha será tratada como temporária.
+5. O sistema exigirá a troca de senha antes de liberar o uso.
+   - Se esta conta antiga já tiver Google Authenticator, ele será confirmado antes da troca por exigência AAL2 do Supabase.
+   - Numa conta realmente nova, sem MFA anterior, a nova senha é criada primeiro e depois o autenticador é configurado.
+6. Teste todo o sistema como se fosse a Ana.
+7. Antes da entrega real, execute ESTE MESMO SQL novamente para apagar os dados de teste e rearmar must_change_password=true.
+8. No Supabase, defina então a senha temporária que será entregue à Ana e, se necessário, altere/valide o e-mail da conta para o e-mail definitivo dela.
+9. Não crie o seu acesso técnico/monitor até terminar a entrega da conta da Ana. O monitor deve ser uma conta separada depois.
+
+IMPORTANTE SOBRE STORAGE:
+O SQL limpa os registros de Materiais, mas não apaga bytes diretamente de storage.objects. Se o SQL emitir um NOTICE dizendo que existem arquivos antigos em materials-private, apague-os pelo painel Storage do Supabase antes da entrega final.

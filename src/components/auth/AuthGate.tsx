@@ -1,5 +1,5 @@
 import type { User } from "@supabase/supabase-js";
-import { LockKeyhole, LogIn, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Circle, Eye, EyeOff, LockKeyhole, LogIn, ShieldCheck } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "../ui/button";
 import { idleTimeoutMinutes, isSupabaseConfigured, supabase, turnstileSiteKey } from "../../lib/supabase";
@@ -29,6 +29,38 @@ const AuthContext = createContext<AuthContextValue>({
 
 export function useAuth() {
   return useContext(AuthContext);
+}
+
+function PasswordRequirements({
+  password,
+  confirmPassword,
+  temporaryPassword,
+}: {
+  password: string;
+  confirmPassword: string;
+  temporaryPassword?: string;
+}) {
+  const checks = [
+    { label: "Pelo menos 8 caracteres", ok: password.length >= 8 },
+    { label: "Pelo menos 1 letra", ok: /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(password) },
+    { label: "Pelo menos 1 número", ok: /\d/.test(password) },
+    ...(temporaryPassword ? [{ label: "Diferente da senha temporária", ok: password.length > 0 && password !== temporaryPassword }] : []),
+    { label: "As duas senhas são iguais", ok: confirmPassword.length > 0 && password === confirmPassword },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-border/70 bg-muted/25 p-3">
+      <p className="text-[11px] font-semibold text-foreground">Requisitos da senha</p>
+      <div className="mt-2 space-y-1.5">
+        {checks.map((check) => (
+          <div key={check.label} className={`flex items-center gap-2 text-xs ${check.ok ? "text-primary" : "text-muted-foreground"}`}>
+            {check.ok ? <CheckCircle2 className="size-3.5 shrink-0" /> : <Circle className="size-3.5 shrink-0" />}
+            <span>{check.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function TurnstileWidget({ onToken }: { onToken: (token: string) => void }) {
@@ -75,6 +107,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "forgot" | "reset" | "vault-recovery">("login");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -305,6 +339,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
         setError("Informe a nova senha e repita exatamente o mesmo valor.");
         return;
       }
+      if (password.length < 8 || !/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(password) || !/\d/.test(password)) {
+        setError("A senha ainda não cumpre todos os requisitos indicados abaixo.");
+        return;
+      }
       setSubmitting(true);
       setError("");
       setNotice("");
@@ -404,8 +442,21 @@ export function AuthGate({ children }: { children: ReactNode }) {
           </p>
           {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
           <div className="mt-6 space-y-4">
-            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Nova senha</span><input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
-            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Repita a nova senha</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveNewPassword(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
+            <label className="block">
+              <span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Nova senha</span>
+              <span className="relative block">
+                <input autoFocus type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 pr-11 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" />
+                <button type="button" className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-foreground" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"} title={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Repita a nova senha</span>
+              <span className="relative block">
+                <input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveNewPassword(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 pr-11 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" />
+                <button type="button" className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-foreground" onClick={() => setShowConfirmPassword((current) => !current)} aria-label={showConfirmPassword ? "Ocultar confirmação da senha" : "Mostrar confirmação da senha"} title={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}>{showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
+              </span>
+            </label>
+            <PasswordRequirements password={password} confirmPassword={confirmPassword} />
           </div>
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
           <Button variant="dashboard" className="mt-6 w-full" onClick={() => void saveNewPassword()} disabled={submitting || !password || !confirmPassword}>{submitting ? "Salvando..." : "Salvar nova senha"}</Button>
@@ -419,10 +470,66 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // no Supabase. Assim o responsável pode entregar uma senha temporária para a Ana sem
   // deixar essa senha como credencial definitiva. A troca ocorre antes do uso do sistema.
   if (isSupabaseConfigured && user && authMode === "login" && user.user_metadata?.["must_change_password"] === true) {
+    const verifyExistingFirstAccessMfa = async () => {
+      if (!supabase || !factorId || !/^\d{6}$/.test(mfaCode)) {
+        setError("Informe o código de 6 dígitos do Google Authenticator.");
+        return;
+      }
+      setSubmitting(true);
+      setError("");
+      const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({ factorId, code: mfaCode });
+      setMfaCode("");
+      if (verifyError) {
+        setError("Código do Google Authenticator inválido ou expirado.");
+        setSubmitting(false);
+        return;
+      }
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        setError("Não foi possível atualizar a sessão segura. Entre novamente e tente outra vez.");
+        setSubmitting(false);
+        return;
+      }
+      await resolveMfa();
+      setSubmitting(false);
+    };
+
+    // Uma conta realmente nova ainda não possui fator MFA verificado e pode trocar a senha
+    // temporária primeiro, seguindo depois para o cadastro do Google Authenticator. Já uma
+    // conta antiga usada para homologar o primeiro acesso pode possuir TOTP verificado; nesse
+    // caso o Supabase exige AAL2 antes de permitir updateUser(password). Confirmamos o fator
+    // existente aqui sem alterar a experiência das contas novas.
+    if (mfaStage === "checking" || mfaStage === "required") {
+      return (
+        <main className="grid min-h-screen place-items-center bg-background p-5 text-foreground">
+          <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
+            <span className="grid size-12 place-items-center rounded-2xl bg-accent"><ShieldCheck className="size-5" /></span>
+            <h1 className="mt-5 font-display text-2xl">Confirmar primeiro acesso</h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Esta conta já possui Google Authenticator cadastrado. Confirme o código atual para autorizar a troca da senha temporária.</p>
+            {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
+            {mfaStage === "checking" ? (
+              <p className="mt-5 text-sm text-muted-foreground">Verificando o autenticador...</p>
+            ) : (
+              <>
+                <input autoFocus inputMode="numeric" maxLength={6} value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, ""))} onKeyDown={(event) => { if (event.key === "Enter") void verifyExistingFirstAccessMfa(); }} className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]" placeholder="000000" />
+                <Button variant="dashboard" className="mt-4 w-full" disabled={submitting || mfaCode.length !== 6} onClick={() => void verifyExistingFirstAccessMfa()}>{submitting ? "Confirmando..." : "Confirmar código"}</Button>
+              </>
+            )}
+            {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+            <Button variant="ghost" className="mt-3 w-full" onClick={() => { if (supabase) void supabase.auth.signOut({ scope: "local" }); }}>Sair</Button>
+          </section>
+        </main>
+      );
+    }
+
     const saveFirstPassword = async () => {
       if (!supabase) return;
       if (!password || password !== confirmPassword) {
         setError("Digite a nova senha e repita exatamente o mesmo valor.");
+        return;
+      }
+      if (password.length < 8 || !/[A-Za-zÀ-ÖØ-öø-ÿ]/.test(password) || !/\d/.test(password)) {
+        setError("A senha ainda não cumpre todos os requisitos indicados abaixo.");
         return;
       }
       if (temporaryPasswordRef.current && password === temporaryPasswordRef.current) {
@@ -435,7 +542,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
       const { data, error: updateError } = await supabase.auth.updateUser({ password, data: nextMetadata });
       if (updateError || !data.user) {
         const message = updateError?.message?.toLowerCase() ?? "";
-        setError(message.includes("password") ? "Não foi possível salvar a nova senha. Use uma senha diferente e tente novamente." : "Não foi possível concluir a troca obrigatória de senha.");
+        if (message.includes("aal2") || message.includes("mfa")) {
+          setError("Confirme o Google Authenticator para autorizar a troca desta senha temporária.");
+          await resolveMfa();
+        } else {
+          setError(message.includes("password") ? "Não foi possível salvar a nova senha. Use uma senha diferente e tente novamente." : "Não foi possível concluir a troca obrigatória de senha.");
+        }
         setSubmitting(false);
         return;
       }
@@ -456,23 +568,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">Este é o primeiro acesso desta conta. A senha usada para entrar é temporária e deve ser substituída antes de usar o sistema.</p>
           {user.email && <p className="mt-3 text-xs text-muted-foreground">Conta: <strong>{user.email}</strong></p>}
           <div className="mt-6 space-y-4">
-            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Nova senha</span><input autoFocus type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
-            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Repita a nova senha</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveFirstPassword(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" /></label>
+            <label className="block">
+              <span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Nova senha</span>
+              <span className="relative block">
+                <input autoFocus type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 pr-11 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" />
+                <button type="button" className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-foreground" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"} title={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
+              </span>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Repita a nova senha</span>
+              <span className="relative block">
+                <input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveFirstPassword(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 pr-11 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="new-password" />
+                <button type="button" className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-foreground" onClick={() => setShowConfirmPassword((current) => !current)} aria-label={showConfirmPassword ? "Ocultar confirmação da senha" : "Mostrar confirmação da senha"} title={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}>{showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
+              </span>
+            </label>
+            <PasswordRequirements password={password} confirmPassword={confirmPassword} temporaryPassword={temporaryPasswordRef.current || undefined} />
           </div>
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
           <Button variant="dashboard" className="mt-6 w-full" disabled={submitting || !password || !confirmPassword} onClick={() => void saveFirstPassword()}>{submitting ? "Salvando..." : "Definir minha senha"}</Button>
-          <Button
-            variant="ghost"
-            className="mt-2 w-full"
-            onClick={() => {
-              // O cliente pode ser nulo em builds sem Supabase configurado.
-              // Embora esta tela só seja exibida com autenticação ativa, a guarda
-              // explícita mantém o fluxo seguro e satisfaz o strict null checking.
-              if (supabase) void supabase.auth.signOut({ scope: "local" });
-            }}
-          >
-            Sair
-          </Button>
+          <Button variant="ghost" className="mt-2 w-full" onClick={() => { if (supabase) void supabase.auth.signOut({ scope: "local" }); }}>Sair</Button>
         </section>
       </main>
     );
@@ -552,7 +666,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">Após a senha, o autenticador será obrigatório.</p>
           <div className="mt-6 space-y-4">
             <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">E-mail</span><input value={email} onChange={(event) => setEmail(event.target.value.slice(0, 254))} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="email" /></label>
-            <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Senha</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void login(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="current-password" /></label>
+            <label className="block">
+              <span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">Senha</span>
+              <span className="relative block">
+                <input type={showPassword ? "text" : "password"} value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void login(); }} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 pr-11 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="current-password" />
+                <button type="button" className="absolute inset-y-0 right-0 grid w-11 place-items-center text-muted-foreground transition hover:text-foreground" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"} title={showPassword ? "Ocultar senha" : "Mostrar senha"}>{showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button>
+              </span>
+            </label>
           </div>
           <button type="button" className="mt-3 text-xs font-medium text-primary underline-offset-4 hover:underline" onClick={() => { setAuthMode("forgot"); setError(""); setNotice(""); }}>Esqueci minha senha</button>
           <TurnstileWidget onToken={setCaptchaToken} />

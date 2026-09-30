@@ -1,0 +1,17 @@
+ANA TAGES v2.0.27 — ACESSO TÉCNICO
+
+Objetivo:
+- manter a conta técnica atual;
+- essa conta passa a enxergar SOMENTE o painel "Uso do Supabase";
+- a futura conta da Ana continua como conta normal do consultório.
+
+EXECUTAR NESTA ORDEM, ANTES DE CRIAR A CONTA DA ANA:
+1) 01 - Estrutura do monitor / SQL_01_ESTRUTURA_MONITOR_SUPABASE_v2.0.27.sql
+2) 02 - Converter conta atual em monitor / SQL_02_CONVERTER_CONTA_ATUAL_EM_MONITOR_v2.0.27.sql
+
+Depois do SQL 02, faça logout e login novamente na conta técnica para o novo papel entrar no token.
+
+IMPORTANTE:
+- o SQL 02 aborta se houver mais de uma conta no Supabase Auth;
+- não edite o script para escolher alguém no escuro;
+- se já existir a conta da Ana, não execute o SQL 02 automático.

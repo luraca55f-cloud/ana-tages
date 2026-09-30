@@ -1,10 +1,5 @@
-ANA TAGES v2.0.25 — validação local
-
-OK - scripts/verify-project.mjs: 24 arquivos de fonte; imports/dependências locais conferidos.
-OK - parser TypeScript/TSX: todos os arquivos TS/TSX sem erro sintático.
-OK - pacote não contém .git, GIT, node_modules ou package-lock.json.
-OK - Prestação de Serviço usa tabela/repositório próprios; não consulta billing_entries/expenses do consultório.
-OK - primeiro acesso usa flag de metadado definida automaticamente para contas criadas após o SQL v2.0.25.
-OK - documentos financeiros continuam usando impressão nativa do navegador, agora com layout A4 institucional.
-
-Observação: o typecheck completo com dependências não pôde ser executado no contêiner local porque o acesso ao registry NPM está indisponível neste ambiente. O build do Cloudflare executa npm run build, incluindo tsc --noEmit.
+ANA TAGES v2.0.29
+- Alteração: requisitos visíveis e validação da nova senha no primeiro acesso e recuperação.
+- Alteração: botão mostrar/ocultar senha em login, primeiro acesso e recuperação.
+- SQL novo: NÃO.
+- SQL 09 no pacote: revisão mais recente de homologação de primeiro acesso.

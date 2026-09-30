@@ -67,3 +67,10 @@ Para uma instalação realmente nova usando esta versão do código, após a mig
 3. Publique o código.
 4. Crie/desbloqueie o cofre uma vez para provisionar a recuperação por e-mail.
 5. O fluxo de recuperação será: e-mail cadastrado -> link seguro -> Google Authenticator -> nova senha do cofre.
+
+## Conta técnica separada
+Na v2.0.27, a conta usada pelo desenvolvedor pode ser mantida como `usage_monitor` em vez de ser excluída. Esse perfil vê somente métricas agregadas de uso do Supabase. Execute a pasta SQL 08 antes de criar a conta da Ana.
+
+
+## v2.0.28 — teste de primeiro acesso
+Use `SQL/09 - Testar primeiro acesso como Ana` para homologar a conta única como uma instalação zerada antes da entrega. Não converta essa conta em monitor técnico durante o ensaio.

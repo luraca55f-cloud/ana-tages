@@ -1,23 +1,24 @@
--- ANA TAGES v2.0.25 — LIMPEZA OPCIONAL DA CONTA ANTIGA
--- ATENÇÃO: este arquivo APAGA DEFINITIVAMENTE os dados da conta informada abaixo.
--- Execute SOMENTE depois que a conta nova da Ana estiver criada, testada e funcionando.
--- O objetivo é liberar a exclusão do usuário antigo no Supabase, pois várias tabelas usam ON DELETE RESTRICT.
---
--- Antes de executar, confira o e-mail em v_email. O valor abaixo corresponde à conta usada nos testes atuais.
+-- ANA TAGES v2.0.27 — LIMPEZA OPCIONAL DOS DADOS DA CONTA TÉCNICA
+-- ATENÇÃO: APAGA DEFINITIVAMENTE os dados de consultório pertencentes ao usuário técnico.
+-- NÃO apaga a conta de autenticação; ela permanece disponível para o painel de uso do Supabase.
+-- Execute SOMENTE depois de confirmar que a conta da Ana foi criada e está funcionando.
 
 begin;
 
 do $$
 declare
-  v_email text := 'deividv156@gmail.com';
+  v_count integer;
   v_owner uuid;
 begin
-  select id into v_owner from auth.users where lower(email) = lower(v_email) limit 1;
-  if v_owner is null then
-    raise exception 'Usuário não encontrado para o e-mail %', v_email;
+  select count(*), min(id)
+    into v_count, v_owner
+  from auth.users
+  where coalesce(raw_app_meta_data ->> 'tages_role', '') = 'usage_monitor';
+
+  if v_count <> 1 or v_owner is null then
+    raise exception 'Esperado exatamente 1 usuário técnico usage_monitor; encontrado(s): %.', v_count;
   end if;
 
-  -- Dependências clínicas e financeiras primeiro.
   delete from public.clinical_access_grants where owner_id = v_owner;
   delete from public.clinical_notes where owner_id = v_owner;
   delete from public.billing_entries where owner_id = v_owner;
@@ -30,7 +31,7 @@ begin
   delete from public.app_settings where owner_id = v_owner;
   delete from public.patients where owner_id = v_owner;
 
-  raise notice 'Dados da conta % (%) removidos. Agora a conta de autenticação pode ser excluída manualmente no Supabase.', v_email, v_owner;
+  raise notice 'Dados do consultório da conta técnica removidos. A conta Auth foi preservada para o monitor de uso.';
 end $$;
 
 commit;

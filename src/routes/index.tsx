@@ -41,6 +41,7 @@ import { Button } from "../components/ui/button";
 import { AuthGate, useAuth } from "../components/auth/AuthGate";
 import { FinanceDashboardMetrics, FinancePage as FinancePageV2, type FinanceTab } from "../features/finance/FinancePage";
 import { ServiceWorkPage } from "../features/service-work/ServiceWorkPage";
+import { UsageMonitorPage } from "../features/usage-monitor/UsageMonitorPage";
 import { paymentMethodLabels } from "../features/finance/documents";
 import type { PaymentMethod } from "../features/finance/types";
 import {
@@ -113,7 +114,14 @@ export const Route = createFileRoute("/")({
 });
 
 function SecureConsultorioApp() {
-  return <AuthGate><ConsultorioApp /></AuthGate>;
+  return <AuthGate><RoleAwareApp /></AuthGate>;
+}
+
+function RoleAwareApp() {
+  const { user } = useAuth();
+  const role = typeof user?.app_metadata?.["tages_role"] === "string" ? user.app_metadata["tages_role"] : "";
+  if (role === "usage_monitor") return <UsageMonitorPage />;
+  return <ConsultorioApp />;
 }
 
 type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Prestação de Serviço" | "Relatórios" | "Materiais" | "Configurações";
@@ -959,6 +967,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
   const [message, setMessage] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recovering, setRecovering] = useState(false);
+  const [activatingEmailRecovery, setActivatingEmailRecovery] = useState(false);
   const [recoveringByEmail, setRecoveringByEmail] = useState(() =>
     typeof window !== "undefined" && window.sessionStorage.getItem("tages:vault-email-recovery-authorized") === "1",
   );
@@ -995,28 +1004,101 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
     return saved;
   };
 
+  const sendVaultRecoveryEmail = async () => {
+    if (!supabase || !user?.email) throw new Error("Não foi possível identificar o e-mail cadastrado da conta.");
+    const redirectTo = `${window.location.origin}${window.location.pathname}?mode=vault-recovery`;
+    const { error } = await supabase.auth.signInWithOtp({
+      email: user.email,
+      options: { emailRedirectTo: redirectTo, shouldCreateUser: false },
+    });
+    if (error) {
+      const normalized = error.message.toLowerCase();
+      if (normalized.includes("rate limit")) throw new Error("Muitas solicitações de e-mail foram feitas recentemente. Aguarde alguns minutos e tente novamente.");
+      throw error;
+    }
+    setMessage(`Enviamos um link de recuperação para ${user.email}. Abra o e-mail e confirme também o Google Authenticator.`);
+  };
+
   const requestEmailRecovery = async () => {
-    if (!supabase || !user?.email) { setMessage("Não foi possível identificar o e-mail cadastrado da conta."); return; }
     if (!emailRecoveryConfigured) {
-      setMessage("A recuperação por e-mail ainda não foi ativada neste cofre. Desbloqueie-o uma vez com a senha atual ou com o código de recuperação para ativá-la.");
+      if (vaultKey) {
+        setVaultBusy(true);
+        setMessage("");
+        try {
+          await activateEmailRecovery(vaultKey);
+          await sendVaultRecoveryEmail();
+        } catch (error) {
+          setMessage(error instanceof Error ? error.message : "Não foi possível ativar a recuperação por e-mail.");
+        } finally {
+          setVaultBusy(false);
+        }
+        return;
+      }
+      // Cofres criados antes da v2.0.24 ainda não possuem o envelope de recuperação por e-mail.
+      // A chave clínica não pode ser reconstruída só com o login/MFA; por isso esta migração
+      // pede UMA única confirmação da senha atual ou do código de recuperação. Depois disso,
+      // a recuperação principal passa a ser somente e-mail + Google Authenticator.
+      setActivatingEmailRecovery(true);
+      setMessage("");
       return;
     }
     setVaultBusy(true);
     setMessage("");
     try {
-      const redirectTo = `${window.location.origin}${window.location.pathname}?mode=vault-recovery`;
-      const { error } = await supabase.auth.signInWithOtp({
-        email: user.email,
-        options: { emailRedirectTo: redirectTo, shouldCreateUser: false },
-      });
-      if (error) {
-        const normalized = error.message.toLowerCase();
-        if (normalized.includes("rate limit")) throw new Error("Muitas solicitações de e-mail foram feitas recentemente. Aguarde alguns minutos e tente novamente.");
-        throw error;
-      }
-      setMessage(`Enviamos um link de recuperação para ${user.email}. Abra o e-mail e confirme também o Google Authenticator.`);
+      await sendVaultRecoveryEmail();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível enviar o e-mail de recuperação.");
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  const activateLegacyEmailRecovery = async () => {
+    if (!settings) return;
+    if (!pass.trim() && !recoveryInput.trim()) {
+      setMessage("Informe a senha atual do cofre ou o código de recuperação para concluir esta ativação única.");
+      return;
+    }
+    setVaultBusy(true);
+    setMessage("");
+    try {
+      let key: CryptoKey | null = null;
+      if (pass.trim()) {
+        if (recoverableConfigured && settings.vault_password_salt && settings.vault_password_key_ciphertext && settings.vault_password_key_iv) {
+          key = await unlockRecoverableVault(pass, {
+            salt: settings.vault_password_salt,
+            ciphertext: settings.vault_password_key_ciphertext,
+            iv: settings.vault_password_key_iv,
+          });
+        } else if (legacyConfigured && settings.vault_salt && settings.vault_verifier_ciphertext && settings.vault_verifier_iv) {
+          key = await unlockLegacyVault(pass, settings.vault_salt, settings.vault_verifier_ciphertext, settings.vault_verifier_iv);
+          if (key) {
+            const upgraded = await createRecoverableEnvelopeForExistingKey(pass, key);
+            const saved = await saveRecoverableSettings(upgraded);
+            onSettings(saved);
+            setRecoveryCode(upgraded.recoveryCode);
+          }
+        }
+      } else if (recoverableConfigured && settings.vault_recovery_salt && settings.vault_recovery_key_ciphertext && settings.vault_recovery_key_iv) {
+        key = await recoverVaultWithCode(recoveryInput, {
+          salt: settings.vault_recovery_salt,
+          ciphertext: settings.vault_recovery_key_ciphertext,
+          iv: settings.vault_recovery_key_iv,
+        });
+      }
+      if (!key) {
+        setMessage(pass.trim() ? "Senha atual do cofre incorreta." : "Código de recuperação inválido.");
+        return;
+      }
+      await activateEmailRecovery(key);
+      onVaultKey(key);
+      setPass("");
+      setRecoveryInput("");
+      setActivatingEmailRecovery(false);
+      await sendVaultRecoveryEmail();
+    } catch (error) {
+      console.error("Falha ao ativar recuperação por e-mail do cofre legado", error);
+      setMessage(error instanceof Error ? error.message : "Não foi possível ativar a recuperação por e-mail.");
     } finally {
       setVaultBusy(false);
     }
@@ -1229,6 +1311,19 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
           <p className="text-[10px] leading-4 text-muted-foreground">Não há requisito mínimo de caracteres. Para maior segurança, prefira uma senha difícil de adivinhar.</p>
           <Button variant="dashboard" disabled={vaultBusy} onClick={() => void setup()}>{vaultBusy ? "Criando cofre..." : "Criar cofre clínico"}</Button>
         </div>
+      ) : activatingEmailRecovery ? (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs leading-5 text-primary">
+            Ativação única da recuperação por e-mail. Este cofre foi criado antes desse recurso. Confirme uma vez a senha atual <strong>ou</strong> o código de recuperação; depois disso, futuras recuperações usarão somente e-mail + Google Authenticator.
+          </div>
+          <input type="password" autoComplete="off" value={pass} onChange={(e) => setPass(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha atual do cofre (opção 1)" />
+          <div className="text-center text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">ou</div>
+          <input value={recoveryInput} onChange={(e) => setRecoveryInput(e.target.value.toUpperCase())} className="h-10 w-full rounded-xl border border-border bg-background px-3 font-mono text-sm" placeholder="Código de recuperação (opção 2)" autoComplete="off" />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="dashboard" disabled={vaultBusy} onClick={() => void activateLegacyEmailRecovery()}>{vaultBusy ? "Ativando..." : "Ativar e enviar e-mail"}</Button>
+            <Button variant="ghost" onClick={() => { setActivatingEmailRecovery(false); setPass(""); setRecoveryInput(""); setMessage(""); }}>Cancelar</Button>
+          </div>
+        </div>
       ) : recoveringByEmail ? (
         <div className="space-y-3">
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs leading-5 text-primary">E-mail e Google Authenticator confirmados. Defina uma nova senha para o cofre.</div>
@@ -1261,7 +1356,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
         <div className="space-y-3">
           <div className="flex gap-2"><input type="password" autoComplete="off" value={pass} onChange={(e) => setPass(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void unlock(); }} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" /><Button variant="dashboard" onClick={() => void unlock()}>Desbloquear</Button></div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="quiet" size="sm" disabled={vaultBusy} onClick={() => void requestEmailRecovery()}>{vaultBusy ? "Enviando..." : "Recuperar por e-mail"}</Button>
+            <Button variant="quiet" size="sm" disabled={vaultBusy} onClick={() => void requestEmailRecovery()}>{vaultBusy ? "Aguarde..." : emailRecoveryConfigured ? "Recuperar por e-mail" : "Ativar recuperação por e-mail"}</Button>
             <button type="button" className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-primary hover:underline" onClick={() => { setRecovering(true); setMessage(""); }}>Usar código de recuperação</button>
           </div>
         </div>

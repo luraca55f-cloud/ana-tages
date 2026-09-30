@@ -102,3 +102,15 @@ Depois do deploy, desbloqueie o cofre uma vez com a senha atual (ou, se necessá
 - Recibo, nota de cobrança e resumo financeiro receberam layout A4 institucional mais limpo e legível.
 - A nova conta da Ana inicia sem dados visíveis por isolamento `owner_id`; a limpeza física da conta antiga é um passo opcional e separado para evitar exclusão acidental.
 
+
+## v2.0.27 — acesso técnico e recuperação do cofre legado
+
+Antes de criar a conta da Ana, execute os SQLs da pasta `08 - Acesso tecnico e uso do Supabase` na ordem 01 e 02. O segundo SQL converte a conta Auth já existente em `usage_monitor`; ele aborta se houver mais de uma conta, para evitar marcar o usuário errado.
+
+Depois do SQL 02, faça logout/login na conta técnica. Ela deve abrir somente o painel Uso do Supabase. A futura conta da Ana não recebe esse papel e segue o fluxo normal do consultório/primeiro acesso.
+
+Para cofres anteriores à v2.0.24, a recuperação por e-mail precisa de uma ativação única com a senha atual ou o código de recuperação. Isso preserva as evoluções já cifradas sem enfraquecer o modelo criptográfico. Depois da ativação, o fluxo principal é e-mail + Google Authenticator.
+
+
+## v2.0.28 — teste de primeiro acesso
+Use `SQL/09 - Testar primeiro acesso como Ana` para homologar a conta única como uma instalação zerada antes da entrega. Não converta essa conta em monitor técnico durante o ensaio.

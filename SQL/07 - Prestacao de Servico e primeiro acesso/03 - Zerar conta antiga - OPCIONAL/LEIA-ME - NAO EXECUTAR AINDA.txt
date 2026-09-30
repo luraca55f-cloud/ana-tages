@@ -1,8 +1,6 @@
-NÃO execute este passo junto com os SQLs 01 e 02.
+NÃO execute esta limpeza antes de validar a conta da Ana.
 
-A nova conta da Ana já abre zerada porque todos os dados do sistema são isolados por owner_id.
+Na v2.0.27 a conta técnica não precisa mais ser excluída: ela pode ser mantida como monitor de uso do Supabase.
+Este SQL opcional apaga apenas os dados de consultório pertencentes ao usuário marcado como usage_monitor e preserva a conta Auth.
 
-Quando a conta da Ana estiver criada, testada e funcionando, a conta antiga poderá ser limpa antes da exclusão.
-A exclusão definitiva da conta antiga deve ser feita somente depois de confirmar que a Ana acessou normalmente.
-
-O pacote não executa limpeza automática para evitar apagar dados por engano.
+Execute somente depois de confirmar que a Ana acessa normalmente a conta dela.

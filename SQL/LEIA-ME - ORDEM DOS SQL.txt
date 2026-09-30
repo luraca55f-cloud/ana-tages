@@ -20,3 +20,11 @@ NÃO EXECUTE NOVAMENTE:
 As partes 03 e 04 não possuem SQL.
 Não execute a migration inicial.
 O Secret VAULT_RECOVERY_SECRET da v2.0.24 deve continuar configurado no Cloudflare.
+
+
+ANA TAGES v2.0.27 — NOVO:
+08 - Acesso tecnico e uso do Supabase
+  1) Execute SQL_01_ESTRUTURA_MONITOR_SUPABASE_v2.0.27.sql
+  2) ANTES de criar a conta da Ana, execute SQL_02_CONVERTER_CONTA_ATUAL_EM_MONITOR_v2.0.27.sql
+
+A limpeza dos dados antigos continua OPCIONAL e só deve ocorrer após validar a conta da Ana.
