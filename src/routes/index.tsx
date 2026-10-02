@@ -1406,7 +1406,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   };
 
   const parsedPackageAmountPreview = Number(packageAmount.replace(",", ".")) || 0;
-  const effectiveInstallmentCount = packagePaymentMode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(packageInstallments || 2)));
+  const effectiveInstallmentCount = packagePaymentMode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(packageInstallments || 1)));
   const installmentPreview = packageInstallmentPreview(parsedPackageAmountPreview, effectiveInstallmentCount, packageFirstDueDate);
 
   const save = async () => {
@@ -1416,7 +1416,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
     if (billing === "session" && parsedSessionAmount <= 0) { setError("Informe o valor padrão da sessão."); return; }
     if (billing === "package" && parsedPackageAmount <= 0) { setError("Informe o valor total do pacote/plano."); return; }
     if (billing === "package" && !packageFirstDueDate) { setError("Informe a data do primeiro pagamento."); return; }
-    if (billing === "package" && packagePaymentMode === "installments" && (packageInstallments < 2 || packageInstallments > 60)) { setError("Informe entre 2 e 60 parcelas."); return; }
+    if (billing === "package" && packagePaymentMode === "installments" && (packageInstallments < 1 || packageInstallments > 60)) { setError("Informe entre 1 e 60 parcelas."); return; }
     setSaving(true); setError("");
     try {
       // Dados cadastrais e regra financeira são persistidos em etapas separadas. A configuração
@@ -1487,7 +1487,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
       {billing === "package" && <>
         <FieldEdit label="Valor total do pacote / plano" value={packageAmount} onChange={setPackageAmount} />
         <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select value={packagePaymentMode} onChange={(e)=>setPackagePaymentMode(e.target.value as "single" | "installments")} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></label>
-        {packagePaymentMode === "installments" && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Número de parcelas</span><input type="number" min={2} max={60} value={packageInstallments} onChange={(e)=>setPackageInstallments(Number(e.target.value))} className="input-finance" /></label>}
+        {packagePaymentMode === "installments" && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Número de parcelas</span><input type="number" min={1} max={60} value={packageInstallments} onChange={(e)=>setPackageInstallments(Number(e.target.value))} className="input-finance" /></label>}
         <label><span className="mb-1.5 block text-[10px] text-muted-foreground">{packagePaymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}</span><input type="date" value={packageFirstDueDate} onChange={(e)=>setPackageFirstDueDate(e.target.value)} className="input-finance" /></label>
         <div className="sm:col-span-2 rounded-2xl border border-border bg-background/45 p-4">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Cobranças que irão para A receber</p>
@@ -1598,11 +1598,24 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
     const parsed = new Date(when);
     if (Number.isNaN(parsed.getTime())) { setError("A data e o horário informados são inválidos."); return; }
 
+    // Ao cancelar uma sessão de paciente com pacote, o sistema pergunta explicitamente se
+    // o pacote financeiro também deve ser cancelado. Isso evita tanto deixar parcelas de
+    // uma simulação em aberto quanto apagar cobranças legítimas ao cancelar só uma sessão.
+    let cancelPackageWithAppointment = false;
+    if (appointment && status === "cancelled" && appointment.status !== "cancelled" && selectedPatient?.package_plan_id) {
+      cancelPackageWithAppointment = window.confirm(
+        "Este paciente possui um pacote/plano ativo. Deseja cancelar também o pacote e as parcelas ainda não pagas?\n\nOK = cancelar pacote e parcelas pendentes.\nCancelar = cancelar somente este atendimento.",
+      );
+    }
+
     setSaving(true); setError("");
     let stage: "appointment" | "payment" | "refresh" = "appointment";
     try {
       const payload = { patient_id:patientId||null, patient_name:name.trim(), scheduled_at:parsed.toISOString(), duration_minutes:duration, modality, status, service_kind:selectedService.kind, service_name:selectedService.name, amount:numericAmount, notes_admin:notes.trim()||null };
       const saved = appointment ? await updateAppointment(appointment.id, payload) : await createAppointment(payload as Omit<AppointmentRow, "id" | "created_at">, requestId);
+      if (appointment && status === "cancelled" && appointment.status !== "cancelled") {
+        await deleteAppointment(saved.id, cancelPackageWithAppointment);
+      }
       stage = "payment";
       if (paymentReceived && canCharge && currentPayment?.status !== "paid") await markAppointmentPaid(saved.id, paymentMethod);
       stage = "refresh";
@@ -1653,7 +1666,15 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
 
       <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>
       {error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}
-      <div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{appointment ? <Button variant="ghost" className="text-destructive" onClick={async()=>{ if(confirm("Cancelar este atendimento? O histórico será preservado.")){setError("");try{await deleteAppointment(appointment.id);await onSaved();}catch{setError("Não foi possível cancelar o atendimento.");}} }}><Trash2 /> Cancelar atendimento</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || !when || !selectedService} onClick={() => void save()}>{saving?"Salvando...":"Salvar"}</Button></div></div>
+      <div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{appointment ? <Button variant="ghost" className="text-destructive" onClick={async()=>{
+        if (!confirm("Cancelar este atendimento? O histórico será preservado.")) return;
+        const cancelPackage = Boolean(selectedPatient?.package_plan_id) && confirm(
+          "Este paciente possui um pacote/plano ativo. Deseja cancelar também o pacote e as parcelas ainda não pagas?\n\nOK = cancelar pacote e parcelas pendentes.\nCancelar = manter o pacote e cancelar somente o atendimento.",
+        );
+        setError("");
+        try { await deleteAppointment(appointment.id, cancelPackage); await onSaved(); }
+        catch { setError("Não foi possível cancelar o atendimento e atualizar o financeiro."); }
+      }}><Trash2 /> Cancelar atendimento</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || !when || !selectedService} onClick={() => void save()}>{saving?"Salvando...":"Salvar"}</Button></div></div>
     </div>
   </ModalShell>;
 }

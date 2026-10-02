@@ -237,7 +237,7 @@ export async function updatePatientBilling(input: PatientBilling) {
     const total = input.package_amount == null ? 0 : cleanMoney(input.package_amount);
     if (total <= 0 || !input.package_first_due_date) throw new Error("Informe valor total e primeiro vencimento do pacote/plano.");
     const paymentMode = input.package_payment_mode === "installments" ? "installments" : "single";
-    const count = paymentMode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(Number(input.package_installments ?? 2))));
+    const count = paymentMode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(Number(input.package_installments ?? 1))));
     const planResult = await supabase.rpc("save_patient_package_plan", {
       p_patient_id: input.id,
       p_total_amount: total,

@@ -309,3 +309,11 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Mantidos sem alteração os requisitos da v2.0.29: mínimo 8 caracteres, 1 letra, 1 número, senha diferente da temporária e confirmação idêntica, além dos botões de mostrar/ocultar senha.
 - Nenhuma alteração de banco, MFA, primeiro acesso ou SQL nesta versão.
 - Commit sugerido: `Corrigir typecheck dos requisitos de senha v2.0.30`.
+
+## v2.0.31 — parcelamento 1x e cancelamento financeiro coerente
+- Pacotes em modo **Parcelado** agora aceitam de 1 a 60 parcelas. O caso 1x é útil quando o valor total será pago integralmente em uma data futura (por exemplo, no próximo mês), mas a usuária quer manter a forma como "Parcelado".
+- A regra foi atualizada no cadastro de paciente, em Financeiro > Pacotes e cobrança e na RPC `save_patient_package_plan`; não reintroduzir mínimo de 2 parcelas.
+- Cancelar atendimento agora usa a RPC transacional `cancel_appointment_with_finance`. Para paciente com pacote/plano ativo, a interface pergunta se também deve cancelar o pacote e as parcelas ainda pendentes.
+- **Regra de preservação financeira:** pagamentos já recebidos/parciais não são apagados. `cancel_patient_package_plan` só encerra parcelas pendentes sem recebimento e preserva histórico.
+- Não cancelar pacote automaticamente ao cancelar qualquer sessão: a usuária precisa escolher explicitamente, pois uma sessão cancelada pode pertencer a um pacote ainda válido.
+- SQL incremental: `SQL/10 - Parcelamento 1x e cancelamento financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.31.sql`.

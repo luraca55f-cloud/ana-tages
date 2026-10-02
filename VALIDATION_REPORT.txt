@@ -1,15 +1,13 @@
-ANA TAGES v2.0.30 — VALIDATION REPORT
+ANA TAGES v2.0.31 — validação local
 
-Base: v2.0.29.
-Correção: AuthGate.tsx / PasswordRequirements.
-Motivo: Cloudflare typecheck TS2375 com exactOptionalPropertyTypes ao enviar temporaryPassword=undefined.
-Correção aplicada: a prop optional temporaryPassword somente é incluída quando existe valor real.
+- scripts/verify-project.mjs: OK (27 arquivos de fonte; imports locais e dependências declaradas conferidos)
+- Sintaxe TypeScript/TSX dos arquivos alterados: OK via TypeScript transpileModule
+- SQL incremental v2.0.31 revisado para execução transacional (BEGIN/COMMIT)
+- Sem pasta .git, node_modules ou arquivos de segredo no pacote final
+- npm install/build completo não foi concluído neste ambiente porque o acesso ao registry expirou; o build definitivo continua sendo validado pelo Cloudflare Workers Builds após o push.
 
-Verificações realizadas neste pacote:
-- scripts/verify-project.mjs: OK — 27 arquivos de fonte verificados.
-- estrutura/imports locais/dependências declaradas: OK.
-- ausência de pasta .git: OK.
-- ausência de node_modules: OK.
-- SQL: sem alteração nesta versão.
-
-Observação: o ambiente de empacotamento não possui o conjunto local de dependências do projeto e não conseguiu instalar o registry para executar o typecheck completo aqui. A alteração corrige exatamente o único erro TS2375 reportado pelo build Cloudflare da v2.0.29.
+Alterações validadas:
+1. Parcelado aceita 1 a 60 parcelas no cadastro do paciente e no Financeiro.
+2. RPC save_patient_package_plan aceita installments=1 e mantém 1/1 no histórico.
+3. Cancelamento de atendimento usa RPC transacional e pode cancelar também pacote + parcelas pendentes, por escolha explícita.
+4. Pagamentos recebidos/parciais continuam preservados no histórico financeiro.

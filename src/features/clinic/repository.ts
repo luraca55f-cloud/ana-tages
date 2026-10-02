@@ -166,7 +166,7 @@ export async function savePatientPackagePlan(input: {
   const client = requireSupabase();
   const total = safeMoney(input.total_amount);
   if (total <= 0) throw new Error("Informe o valor total do pacote/plano.");
-  const installmentCount = input.payment_mode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(input.installment_count)));
+  const installmentCount = input.payment_mode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(input.installment_count)));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.first_due_date)) throw new Error("Informe a data do primeiro pagamento.");
   const { data, error } = await client.rpc("save_patient_package_plan", {
     p_patient_id: input.patient_id,
@@ -305,9 +305,15 @@ export async function updateAppointment(id: string, patch: Partial<AppointmentRo
 }
 
 // Mantém histórico: "excluir" um atendimento apenas o cancela.
-export async function deleteAppointment(id: string) {
+export async function deleteAppointment(id: string, cancelPackagePlan = false) {
   const client = requireSupabase();
-  const { error } = await client.from("appointments").update({ status: "cancelled" }).eq("id", id);
+  // O cancelamento passa pelo banco para que atendimento e financeiro sejam tratados na
+  // mesma transação. Quando solicitado pela usuária, o pacote ativo e suas parcelas ainda
+  // não recebidas também são cancelados, evitando cobranças abertas de simulações/testes.
+  const { error } = await client.rpc("cancel_appointment_with_finance", {
+    p_appointment_id: id,
+    p_cancel_package: cancelPackagePlan,
+  });
   if (error) throw error;
 }
 

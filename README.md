@@ -215,3 +215,8 @@ A experiência de senha foi aprimorada: requisitos visíveis em tempo real (8+ c
 
 ### v2.0.30
 Correção de build/typecheck da interface de requisitos de senha. Sem alteração de SQL.
+
+
+### Ajustes v2.0.31
+- Pacote/plano em modo Parcelado aceita 1x a 60x, inclusive 1x com vencimento no próximo mês.
+- Ao cancelar atendimento de paciente com pacote ativo, o sistema permite cancelar também o pacote e as parcelas pendentes sem apagar pagamentos já registrados.
