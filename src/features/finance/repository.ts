@@ -249,8 +249,11 @@ export async function deleteRevenueReceipt(id: string) {
   if (error) throw error;
 }
 
-export async function updatePatientBilling(input: PatientBilling) {
-  if (isTestMode()) return testUpdatePatientBilling(input);
+export async function updatePatientBilling(input: PatientBilling): Promise<void> {
+  if (isTestMode()) {
+    testUpdatePatientBilling(input);
+    return;
+  }
   if (!supabase) throw new Error("Supabase não configurado");
   const model = input.billing_model === "package" ? "package" : "session";
 
@@ -283,4 +286,5 @@ export async function updatePatientBilling(input: PatientBilling) {
     billing_day: null,
   }).eq("id", input.id).is("archived_at", null);
   if (error) throw error;
+  return;
 }

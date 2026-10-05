@@ -628,16 +628,18 @@ export function testDeleteRevenueReceipt(id: string) {
   writeTestDb(db);
 }
 
-export function testUpdatePatientBilling(input: PatientBilling) {
+export function testUpdatePatientBilling(input: PatientBilling): void {
   if (input.billing_model === "package") {
     if (!input.package_first_due_date || input.package_amount == null) throw new Error("Informe valor total e primeiro vencimento do pacote/plano.");
-    return testSavePatientPackagePlan({ patient_id: input.id, total_amount: input.package_amount, payment_mode: input.package_payment_mode === "installments" ? "installments" : "single", installment_count: input.package_installments ?? 1, first_due_date: input.package_first_due_date });
+    testSavePatientPackagePlan({ patient_id: input.id, total_amount: input.package_amount, payment_mode: input.package_payment_mode === "installments" ? "installments" : "single", installment_count: input.package_installments ?? 1, first_due_date: input.package_first_due_date });
+    return;
   }
   testCancelPatientPackagePlan(input.id);
   const db = readTestDb();
   const patient = db.patients.find((p) => p.id === input.id);
   if (patient) { patient.billing_model = "session"; patient.session_amount = input.session_amount; patient.package_amount = null; }
   writeTestDb(db);
+  return;
 }
 
 export function testListServiceWorkEntries(startDate: string, endExclusive: string) {
