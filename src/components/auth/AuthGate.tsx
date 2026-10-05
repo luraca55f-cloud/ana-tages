@@ -661,16 +661,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
         setError("Informe o e-mail de acesso.");
         return;
       }
-      if (testLoginEnabled) {
-        try {
-          const matchResponse = await fetch("/api/test-auth/match", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
-          const match = await matchResponse.json() as { matched?: boolean };
-          if (match.matched) {
-            setError("A senha do perfil de teste é administrada no Cloudflare e não usa recuperação pelo Supabase.");
-            return;
-          }
-        } catch { /* Se o endpoint de teste estiver indisponível, o fluxo clínico continua normalmente. */ }
-      }
+      try {
+        const matchResponse = await fetch("/api/test-auth/match", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
+        const match = await matchResponse.json() as { matched?: boolean };
+        if (match.matched) {
+          setError("A senha do perfil de teste é administrada no Cloudflare e não usa recuperação pelo Supabase.");
+          return;
+        }
+      } catch { /* Se o endpoint de teste estiver indisponível, o fluxo clínico continua normalmente. */ }
       setSubmitting(true);
       setError("");
       setNotice("");
@@ -684,39 +682,40 @@ export function AuthGate({ children }: { children: ReactNode }) {
     const login = async () => {
       if (!email.trim() || !password) return;
 
-      if (testLoginEnabled) {
-        setSubmitting(true);
-        setError("");
-        try {
-          const response = await fetch("/api/test-auth/login", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ email: email.trim(), password }),
-          });
-          const payload = await response.json() as { ok?: boolean; email?: string; matched?: boolean; error?: string };
-          if (response.ok && payload.ok && payload.email) {
-            const normalizedEmail = payload.email.toLowerCase();
-            setGlobalTestMode(true, normalizedEmail);
-            testModeRef.current = true;
-            setTestMode(true);
-            setUser(createTestUser(normalizedEmail));
-            setMfaStage("ready");
-            setPassword("");
-            setNotice("");
-            setSubmitting(false);
-            return;
-          }
-          if (payload.matched) {
-            setError(payload.error || "Credenciais inválidas para o perfil de teste.");
-            setSubmitting(false);
-            return;
-          }
-        } catch {
-          // Falha no endpoint de teste não deve impedir o login clínico normal.
+      // Tenta o perfil de homologação em toda submissão. O Worker responde `matched: false`
+      // imediatamente para o e-mail clínico, então a conta real continua no fluxo Supabase.
+      // Isso evita depender da chamada /info ter terminado antes de o usuário clicar em Entrar.
+      setSubmitting(true);
+      setError("");
+      try {
+        const response = await fetch("/api/test-auth/login", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), password }),
+        });
+        const payload = await response.json() as { ok?: boolean; email?: string; matched?: boolean; error?: string };
+        if (response.ok && payload.ok && payload.email) {
+          const normalizedEmail = payload.email.toLowerCase();
+          setGlobalTestMode(true, normalizedEmail);
+          testModeRef.current = true;
+          setTestMode(true);
+          setUser(createTestUser(normalizedEmail));
+          setMfaStage("ready");
+          setPassword("");
+          setNotice("");
+          setSubmitting(false);
+          return;
         }
-        setSubmitting(false);
+        if (payload.matched) {
+          setError(payload.error || "Credenciais inválidas para o perfil de teste.");
+          setSubmitting(false);
+          return;
+        }
+      } catch {
+        // Falha no endpoint de teste não deve impedir o login clínico normal.
       }
+      setSubmitting(false);
 
       if (!supabase) return;
       if (Date.now() < blockedUntil.current) {

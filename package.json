@@ -1,6 +1,6 @@
 {
   "name": "ana-tages",
-  "version": "2.0.32",
+  "version": "2.0.34",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -8,7 +8,7 @@
     "dev": "vite dev",
     "verify:project": "node scripts/verify-project.mjs",
     "typecheck": "tsc --noEmit",
-    "build": "npm run verify:project && vite build && npm run typecheck",
+    "build": "npm run verify:project && vite build && npm run typecheck && node scripts/sync-runtime-secrets.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "cf-typegen": "wrangler types",

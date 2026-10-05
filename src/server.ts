@@ -16,6 +16,9 @@ type Env = {
   // Perfil de homologação: autenticação própria do Worker. Não usa Supabase Auth nem grava dados no Supabase.
   TEST_LOGIN_EMAIL?: string;
   TEST_LOGIN_PASSWORD?: string;
+  // Token escopado da Management API. Fica somente no runtime do Worker.
+  SUPABASE_MANAGEMENT_TOKEN?: string;
+  SUPABASE_PROJECT_REF?: string;
 };
 
 type ServerHandler = {
@@ -261,6 +264,146 @@ async function handleTestAuthApi(request: Request, env: Env): Promise<Response |
   return new Response("Não encontrado", { status: 404 });
 }
 
+
+type ManagementApiError = Error & { status?: number };
+
+async function managementApiJson(env: Env, path: string, init?: RequestInit) {
+  const token = String(env.SUPABASE_MANAGEMENT_TOKEN ?? "").trim();
+  const ref = String(env.SUPABASE_PROJECT_REF ?? "").trim();
+  if (!token || !/^[a-z0-9]{20}$/.test(ref)) {
+    const error = new Error("O painel de uso ainda não foi configurado no runtime do Cloudflare.") as ManagementApiError;
+    error.status = 503;
+    throw error;
+  }
+
+  const headers = new Headers(init?.headers);
+  headers.set("authorization", `Bearer ${token}`);
+  if (init?.body && !headers.has("content-type")) headers.set("content-type", "application/json");
+  const response = await fetch(`https://api.supabase.com/v1/projects/${ref}${path}`, {
+    ...init,
+    headers,
+  });
+  const text = await response.text();
+  let payload: unknown = null;
+  if (text) {
+    try { payload = JSON.parse(text); } catch { payload = text; }
+  }
+  if (!response.ok) {
+    const detail = payload && typeof payload === "object"
+      ? String((payload as Record<string, unknown>)["message"] ?? (payload as Record<string, unknown>)["error"] ?? "")
+      : typeof payload === "string" ? payload : "";
+    const message = response.status === 401 || response.status === 403
+      ? "O token do Supabase não possui a permissão de leitura necessária ou expirou."
+      : detail || `Falha ao consultar o Supabase (${response.status}).`;
+    const error = new Error(message) as ManagementApiError;
+    error.status = response.status;
+    throw error;
+  }
+  return payload;
+}
+
+function firstResultRow(payload: unknown): Record<string, unknown> | null {
+  if (Array.isArray(payload)) {
+    const first = payload[0];
+    return first && typeof first === "object" ? first as Record<string, unknown> : null;
+  }
+  if (!payload || typeof payload !== "object") return null;
+  const object = payload as Record<string, unknown>;
+  for (const key of ["result", "data", "rows"]) {
+    const nested = object[key];
+    if (Array.isArray(nested)) {
+      const first = nested[0];
+      if (first && typeof first === "object") return first as Record<string, unknown>;
+    }
+  }
+  return object;
+}
+
+function numberValue(value: unknown) {
+  const parsed = typeof value === "number" ? value : Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function handleTestSupabaseUsageApi(request: Request, env: Env): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (url.pathname !== "/api/test-supabase-usage") return null;
+  if (request.method !== "GET") return new Response("Método não permitido", { status: 405, headers: { allow: "GET" } });
+
+  const session = await verifyTestSession(request, env);
+  if (!session) return Response.json({ error: "Sessão de teste obrigatória." }, { status: 401 });
+
+  try {
+    const query = `
+      select
+        pg_catalog.pg_database_size(pg_catalog.current_database())::bigint as database_bytes,
+        coalesce((select pg_catalog.sum(nullif(o.metadata ->> 'size', '')::bigint) from storage.objects as o), 0)::bigint as storage_bytes,
+        (select pg_catalog.count(*) from storage.objects as o)::bigint as storage_objects,
+        (select pg_catalog.count(*) from auth.users as u)::bigint as auth_users,
+        (select pg_catalog.count(*) from auth.users as u where u.last_sign_in_at >= pg_catalog.date_trunc('month', pg_catalog.now()))::bigint as active_users_month
+    `;
+
+    const [queryPayload, apiCountsPayload, diskPayload, diskUtilPayload] = await Promise.all([
+      managementApiJson(env, "/database/query/read-only", { method: "POST", body: JSON.stringify({ query }) }),
+      managementApiJson(env, "/analytics/endpoints/usage.api-counts").catch(() => null),
+      managementApiJson(env, "/config/disk").catch(() => null),
+      managementApiJson(env, "/config/disk/util").catch(() => null),
+    ]);
+
+    const row = firstResultRow(queryPayload);
+    if (!row) throw new Error("O Supabase não retornou os dados de uso esperados.");
+
+    const apiResult = apiCountsPayload && typeof apiCountsPayload === "object"
+      ? (apiCountsPayload as Record<string, unknown>)["result"]
+      : null;
+    const apiRows = Array.isArray(apiResult) ? apiResult : [];
+    const totals = apiRows.reduce((acc, current) => {
+      if (!current || typeof current !== "object") return acc;
+      const item = current as Record<string, unknown>;
+      acc.auth += numberValue(item["total_auth_requests"]);
+      acc.realtime += numberValue(item["total_realtime_requests"]);
+      acc.rest += numberValue(item["total_rest_requests"]);
+      acc.storage += numberValue(item["total_storage_requests"]);
+      return acc;
+    }, { auth: 0, realtime: 0, rest: 0, storage: 0 });
+
+    const diskObject = diskPayload && typeof diskPayload === "object" ? diskPayload as Record<string, unknown> : null;
+    const attributes = diskObject?.["attributes"] && typeof diskObject["attributes"] === "object"
+      ? diskObject["attributes"] as Record<string, unknown>
+      : null;
+    const diskUtilObject = diskUtilPayload && typeof diskUtilPayload === "object" ? diskUtilPayload as Record<string, unknown> : null;
+    const diskMetrics = diskUtilObject?.["metrics"] && typeof diskUtilObject["metrics"] === "object"
+      ? diskUtilObject["metrics"] as Record<string, unknown>
+      : null;
+    const diskUsedBytes = diskMetrics ? numberValue(diskMetrics["fs_used_bytes"]) : 0;
+    const diskTotalBytes = diskMetrics ? numberValue(diskMetrics["fs_size_bytes"]) : 0;
+
+    return Response.json({
+      database_bytes: numberValue(row["database_bytes"]),
+      storage_bytes: numberValue(row["storage_bytes"]),
+      storage_objects: numberValue(row["storage_objects"]),
+      auth_users: numberValue(row["auth_users"]),
+      active_users_month: numberValue(row["active_users_month"]),
+      api_requests: totals.auth + totals.realtime + totals.rest + totals.storage,
+      auth_requests: totals.auth,
+      realtime_requests: totals.realtime,
+      rest_requests: totals.rest,
+      storage_requests: totals.storage,
+      disk_size_gb: attributes ? numberValue(attributes["size_gb"]) : null,
+      disk_used_bytes: diskUsedBytes,
+      disk_total_bytes: diskTotalBytes,
+      disk_usage_percent: diskTotalBytes > 0 ? Math.round((diskUsedBytes / diskTotalBytes) * 1000) / 10 : null,
+      generated_at: new Date().toISOString(),
+    }, { headers: { "cache-control": "no-store" } });
+  } catch (cause) {
+    console.error("Test Supabase usage failed", cause);
+    const error = cause as ManagementApiError;
+    return Response.json({ error: error.message || "Não foi possível consultar o uso do Supabase." }, {
+      status: error.status && error.status >= 400 && error.status < 600 ? error.status : 502,
+      headers: { "cache-control": "no-store" },
+    });
+  }
+}
+
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy": [
     "default-src 'self'",
@@ -349,6 +492,9 @@ export default {
 
       const testAuthResponse = await handleTestAuthApi(request, env);
       if (testAuthResponse) return secureResponse(testAuthResponse, request);
+
+      const testUsageResponse = await handleTestSupabaseUsageApi(request, env);
+      if (testUsageResponse) return secureResponse(testUsageResponse, request);
 
       const vaultRecoveryResponse = await handleVaultRecoveryApi(request, env);
       if (vaultRecoveryResponse) return secureResponse(vaultRecoveryResponse, request);

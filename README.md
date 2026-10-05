@@ -1,9 +1,9 @@
-> Versão atual: **v2.0.32**
+> Versão atual: **v2.0.33**
 
 
 > **v2.0.25:** Prestação de Serviço isolada, primeiro acesso com troca obrigatória de senha e documentos financeiros redesenhados.
 
-# TAGES CONSULTORIA ANNA — v2.0.32
+# TAGES CONSULTORIA ANNA — v2.0.33
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 
@@ -53,6 +53,17 @@ Nunca coloque no frontend:
 - Secret Key do Supabase
 - Turnstile Secret Key
 - tokens pessoais
+
+## Variáveis de runtime do Worker
+
+Estas variáveis devem ser criadas em **Settings > Runtime > Variables and Secrets** do Worker, e não apenas em Workers Builds:
+
+- `TEST_LOGIN_EMAIL` — Variable;
+- `TEST_LOGIN_PASSWORD` — Secret;
+- `SUPABASE_PROJECT_REF` — Variable;
+- `SUPABASE_MANAGEMENT_TOKEN` — Secret escopado somente para leitura do projeto.
+
+O `wrangler.jsonc` usa `keep_vars: true` para preservar as variáveis de runtime configuradas no painel durante novos deploys.
 
 ## Supabase
 
@@ -231,3 +242,14 @@ Configuração necessária no Cloudflare Worker:
 - `TEST_LOGIN_PASSWORD` — Secret de runtime.
 
 Não há SQL nesta etapa. Consulte `TEST_PROFILE_SETUP.md`.
+
+
+## v2.0.33 — login de homologação e uso do Supabase
+
+- Login de teste passa a tentar o endpoint do Worker diretamente, sem depender da chamada `/api/test-auth/info` terminar antes do clique em Entrar.
+- `TEST_LOGIN_EMAIL` e `TEST_LOGIN_PASSWORD` são bindings de **runtime** do Worker; build variables não bastam para autenticação.
+- Novo módulo **Uso Supabase** aparece somente no perfil de homologação.
+- O módulo consulta a Management API do Supabase pelo Worker com token read-only; o token nunca é enviado ao navegador.
+- Métricas: tamanho do banco, Storage, arquivos, usuários, usuários ativos no mês, requisições API e disco provisionado.
+- Dados de teste continuam no navegador e não são gravados no Supabase.
+- SQL: NÃO.

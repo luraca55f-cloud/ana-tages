@@ -330,3 +330,15 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - 2FA e recuperação de cofre por e-mail não são executados no perfil de teste, porque esses fluxos dependem do Supabase real. Cofre/prontuário pode ser testado localmente com senha/código de recuperação.
 - SQL: NÃO. Pasta `SQL/11 - Perfil de teste local sem Supabase` contém somente orientação.
 - Commit sugerido: `Adicionar perfil de teste local isolado do Supabase v2.0.32`.
+
+
+## v2.0.33 — login de teste + painel de uso read-only
+- Corrigida a corrida do login de homologação: o submit tenta `/api/test-auth/login` diretamente e não depende de `testLoginEnabled` já ter sido carregado.
+- O problema de produção observado vinha das credenciais terem sido cadastradas em Workers Builds; `env.TEST_LOGIN_*` exige bindings de runtime do Worker.
+- `wrangler.jsonc` agora usa `keep_vars: true` para preservar variáveis configuradas no dashboard durante deploys.
+- Novo endpoint autenticado `/api/test-supabase-usage`: exige sessão de teste e usa `SUPABASE_MANAGEMENT_TOKEN` + `SUPABASE_PROJECT_REF` somente server-side.
+- A consulta do banco usa o endpoint read-only da Management API; requisições agregadas e disco são obtidos por endpoints de leitura.
+- Novo módulo `Uso Supabase` aparece somente no perfil de teste. Nenhum token é exposto ao browser.
+- Dados de homologação continuam locais; o único acesso ao Supabase nesse perfil é leitura agregada do painel de uso.
+- SQL: NÃO.
+- Commit sugerido: `Corrigir login de teste e adicionar uso do Supabase v2.0.33`.

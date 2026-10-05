@@ -1,12 +1,8 @@
-ANA TAGES v2.0.32 - VALIDATION REPORT
+ANA TAGES v2.0.34 — validação da correção de runtime
 
-- Base: v2.0.31 completa.
-- Projeto: verify-project.mjs OK (29 arquivos de fonte).
-- TypeScript interno do armazenamento local: OK com strict + exactOptionalPropertyTypes.
-- Verificação TypeScript de toda a árvore src com stubs de dependências externas: OK.
-- server.ts (endpoints de autenticação do perfil de teste): typecheck isolado OK.
-- Sintaxe TS/TSX: OK.
+- Login de teste continua validado somente pelo Worker.
+- Painel Uso Supabase continua somente leitura e protegido por sessão de teste.
+- Build variables/secrets não são expostos ao frontend.
+- Sincronização automática para runtime usa `wrangler secret bulk` via stdin; valores não são gravados em arquivo.
+- Build local sem secrets: sincronização ignorada.
 - SQL novo: NÃO.
-- Dados do perfil de teste: localStorage do navegador; sem escrita/leitura de domínio no Supabase.
-- Autenticação do perfil de teste: Cloudflare Worker, cookie HttpOnly/Secure/SameSite=Strict.
-- Conta clínica da Ana: fluxo Supabase/MFA preservado.

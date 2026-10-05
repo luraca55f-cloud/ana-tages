@@ -9,6 +9,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
+  Database,
   Clock3,
   Download,
   Eye,
@@ -125,7 +126,7 @@ function RoleAwareApp() {
   return <ConsultorioApp />;
 }
 
-type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Prestação de Serviço" | "Relatórios" | "Materiais" | "Configurações";
+type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Prestação de Serviço" | "Relatórios" | "Materiais" | "Uso Supabase" | "Configurações";
 type QuickAction = "session" | "expense" | "revenue" | "patient";
 
 type PatientView = PatientRow & {
@@ -145,6 +146,7 @@ const navItems: Array<[ModuleKey, typeof LayoutDashboard]> = [
   ["Prestação de Serviço", BriefcaseBusiness],
   ["Relatórios", FileBarChart],
   ["Materiais", FileText],
+  ["Uso Supabase", Database],
   ["Configurações", Settings],
 ];
 
@@ -477,7 +479,7 @@ function ConsultorioApp() {
           <div><p className="text-sm font-semibold">{isTestMode ? "Perfil de teste" : "Anna Karina Dias"}</p><p className="text-[10px] text-muted-foreground">{isTestMode ? "Homologação local" : "Gestão do consultório"}</p></div>
         </button>
         <nav className="mt-8 space-y-1.5">
-          {navItems.map(([label, Icon]) => <button key={label} onClick={() => openModule(label)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${activeModule === label ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}><Icon className="size-4" />{label}</button>)}
+          {navItems.filter(([label]) => label !== "Uso Supabase" || isTestMode).map(([label, Icon]) => <button key={label} onClick={() => openModule(label)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${activeModule === label ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}><Icon className="size-4" />{label}</button>)}
         </nav>
         <div className="mt-auto rounded-2xl border border-border bg-background/55 p-3 text-[10px] leading-4 text-muted-foreground"><ShieldCheck className="mb-2 size-4 text-secondary" />Prontuários com TOTP e conteúdo clínico criptografado no navegador.</div>
       </aside>
@@ -490,7 +492,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • sem Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
@@ -508,6 +510,7 @@ function ConsultorioApp() {
           {activeModule === "Prestação de Serviço" && <ServiceWorkPage />}
           {activeModule === "Relatórios" && <ReportsPage />}
           {activeModule === "Materiais" && <MaterialsPage />}
+          {activeModule === "Uso Supabase" && isTestMode && <UsageMonitorPage embedded />}
           {activeModule === "Configurações" && <SettingsPage settings={settings} vaultKey={vaultKey} onVaultKey={setVaultKey} onSettings={(value) => setSettings(value)} />}
         </main>
       </div>
@@ -881,7 +884,7 @@ function SettingsPage({ settings, vaultKey, onVaultKey, onSettings }: { settings
   return <>
     <PageHeader title="Configurações" description="Perfil, serviços oferecidos e proteção da conta e dos prontuários." />
     <div className="grid gap-4 xl:grid-cols-2">
-      {isTestMode && <SettingsCard title="Perfil de homologação" description="Tudo que você cadastrar neste perfil fica somente neste navegador e não é enviado ao Supabase."><div className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-xs leading-5 text-amber-900">Use este acesso para testar pacientes, agenda, financeiro, pacotes, recibos e demais telas sem tocar nos dados reais da psicóloga.</div><Button variant="quiet" size="sm" className="mt-3" onClick={() => { if (confirm("Apagar todos os dados de teste deste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar dados de teste</Button></SettingsCard>}
+      {isTestMode && <SettingsCard title="Perfil de homologação" description="Tudo que você cadastrar neste perfil fica somente neste navegador e não é gravado no Supabase."><div className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-xs leading-5 text-amber-900">Use este acesso para testar pacientes, agenda, financeiro, pacotes, recibos e demais telas sem tocar nos dados reais da psicóloga. O módulo Uso Supabase consulta somente métricas de leitura pelo Cloudflare.</div><Button variant="quiet" size="sm" className="mt-3" onClick={() => { if (confirm("Apagar todos os dados de teste deste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar dados de teste</Button></SettingsCard>}
       <SettingsCard title="Perfil profissional" description="Dados administrativos usados no consultório, recibos e documentos financeiros."><div className="grid gap-4 sm:grid-cols-2"><FieldEdit label="Nome completo" value={draft.professional_name} onChange={(v) => setDraft((d) => ({...d, professional_name:v}))} /><FieldEdit label="CPF" value={draft.cpf} onChange={(v) => setDraft((d) => ({...d, cpf:formatCpf(v)}))} /><FieldEdit label="CRP" value={draft.crp} onChange={(v) => setDraft((d) => ({...d, crp:v}))} /><FieldEdit label="Cidade" value={draft.city} onChange={(v) => setDraft((d) => ({...d, city:v}))} /><FieldEdit label="Telefone" value={draft.phone} onChange={(v) => setDraft((d) => ({...d, phone:v}))} /><FieldEdit label="E-mail" value={draft.email} onChange={(v) => setDraft((d) => ({...d, email:v}))} /></div><Button variant="quiet" size="sm" className="mt-4" onClick={() => void saveProfile()}>Salvar alterações</Button></SettingsCard>
       <ServiceCatalogSettings settings={settings} onSettings={onSettings} />
       <MfaSettings />

@@ -123,3 +123,19 @@ Antes do deploy, configure no Worker `ana-tages`:
 - `TEST_LOGIN_PASSWORD` como Secret.
 
 Não use prefixo `VITE_`. O perfil de teste é autenticado pelo próprio Worker e os dados de homologação ficam no navegador; nenhum SQL novo é necessário.
+
+
+## v2.0.33 — runtime do perfil de teste + painel de uso
+
+No Cloudflare, crie as quatro variáveis em **Settings > Runtime > Variables and Secrets**. Não use somente a seção Builds:
+
+- `TEST_LOGIN_EMAIL` (Variable)
+- `TEST_LOGIN_PASSWORD` (Secret)
+- `SUPABASE_PROJECT_REF` (Variable)
+- `SUPABASE_MANAGEMENT_TOKEN` (Secret)
+
+O token do Supabase fica somente no Worker. O perfil de teste continua sem gravações no Supabase. Nenhum SQL novo.
+
+## v2.0.34 — Builds -> runtime secrets
+
+O pipeline sincroniza automaticamente os secrets de runtime a partir dos Build Variables/Secrets antes de `wrangler deploy`. Não é necessário cadastrar manualmente os cinco bindings de runtime no painel. `keep_vars: true` continua ativo para preservar bindings existentes.
