@@ -101,6 +101,7 @@ import type {
   ServiceKind,
 } from "../features/clinic/types";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
+import { resetTestDb } from "../lib/test-data";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -118,9 +119,9 @@ function SecureConsultorioApp() {
 }
 
 function RoleAwareApp() {
-  const { user } = useAuth();
+  const { user, isTestMode } = useAuth();
   const role = typeof user?.app_metadata?.["tages_role"] === "string" ? user.app_metadata["tages_role"] : "";
-  if (role === "usage_monitor") return <UsageMonitorPage />;
+  if (!isTestMode && role === "usage_monitor") return <UsageMonitorPage />;
   return <ConsultorioApp />;
 }
 
@@ -396,7 +397,7 @@ function toPatientView(patient: PatientRow, appointments: AppointmentRow[]): Pat
 }
 
 function ConsultorioApp() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isTestMode } = useAuth();
   const [activeModule, setActiveModule] = useState<ModuleKey>(() =>
     typeof window !== "undefined" && window.sessionStorage.getItem("tages:vault-email-recovery-authorized") === "1"
       ? "Configurações"
@@ -473,7 +474,7 @@ function ConsultorioApp() {
         <Button variant="ghost" size="icon" className="absolute right-3 top-3 lg:hidden" onClick={() => setMenuOpen(false)}><X /></Button>
         <button onClick={() => openModule("Dashboard")} className="flex items-center gap-3 text-left">
           <span className="grid size-11 place-items-center rounded-2xl bg-primary font-display text-sm font-bold text-primary-foreground">AK</span>
-          <div><p className="text-sm font-semibold">Anna Karina Dias</p><p className="text-[10px] text-muted-foreground">Gestão do consultório</p></div>
+          <div><p className="text-sm font-semibold">{isTestMode ? "Perfil de teste" : "Anna Karina Dias"}</p><p className="text-[10px] text-muted-foreground">{isTestMode ? "Homologação local" : "Gestão do consultório"}</p></div>
         </button>
         <nav className="mt-8 space-y-1.5">
           {navItems.map(([label, Icon]) => <button key={label} onClick={() => openModule(label)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${activeModule === label ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}><Icon className="size-4" />{label}</button>)}
@@ -488,9 +489,13 @@ function ConsultorioApp() {
           <Button variant="ghost" size="icon" className="mr-2 lg:hidden" onClick={() => setMenuOpen(true)}><Menu /></Button>
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
+            {isTestMode && <>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • sem Supabase</span>
+              <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
+            </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
             <Button variant="quiet" size="icon" className="rounded-full" onClick={() => void signOut()}><LogOut /></Button>
-            <div className="hidden border-l border-border pl-3 sm:block"><p className="text-xs font-semibold">{settings?.professional_name || "Anna Karina Dias"}</p><p className="text-[10px] text-muted-foreground">{user?.email ?? ""}</p></div>
+            <div className="hidden border-l border-border pl-3 sm:block"><p className="text-xs font-semibold">{isTestMode ? "Perfil de teste" : settings?.professional_name || "Anna Karina Dias"}</p><p className="text-[10px] text-muted-foreground">{user?.email ?? ""}</p></div>
           </div>
         </header>
 
@@ -857,6 +862,7 @@ function MaterialsPage() {
 }
 
 function SettingsPage({ settings, vaultKey, onVaultKey, onSettings }: { settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey | null) => void; onSettings: (s: AppSettingsRow) => void }) {
+  const { isTestMode } = useAuth();
   // Nome completo, CPF e CRP formam a identificação profissional usada futuramente
   // em recibos e notas de cobrança. Não fixe esses dados no código: a fonte é Configurações.
   const [draft, setDraft] = useState({ professional_name: settings?.professional_name || "Anna Karina Dias", cpf: formatCpf(settings?.cpf), crp: settings?.crp || "", city: settings?.city || "", phone: settings?.phone || "", email: settings?.email || "" });
@@ -875,6 +881,7 @@ function SettingsPage({ settings, vaultKey, onVaultKey, onSettings }: { settings
   return <>
     <PageHeader title="Configurações" description="Perfil, serviços oferecidos e proteção da conta e dos prontuários." />
     <div className="grid gap-4 xl:grid-cols-2">
+      {isTestMode && <SettingsCard title="Perfil de homologação" description="Tudo que você cadastrar neste perfil fica somente neste navegador e não é enviado ao Supabase."><div className="rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-xs leading-5 text-amber-900">Use este acesso para testar pacientes, agenda, financeiro, pacotes, recibos e demais telas sem tocar nos dados reais da psicóloga.</div><Button variant="quiet" size="sm" className="mt-3" onClick={() => { if (confirm("Apagar todos os dados de teste deste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar dados de teste</Button></SettingsCard>}
       <SettingsCard title="Perfil profissional" description="Dados administrativos usados no consultório, recibos e documentos financeiros."><div className="grid gap-4 sm:grid-cols-2"><FieldEdit label="Nome completo" value={draft.professional_name} onChange={(v) => setDraft((d) => ({...d, professional_name:v}))} /><FieldEdit label="CPF" value={draft.cpf} onChange={(v) => setDraft((d) => ({...d, cpf:formatCpf(v)}))} /><FieldEdit label="CRP" value={draft.crp} onChange={(v) => setDraft((d) => ({...d, crp:v}))} /><FieldEdit label="Cidade" value={draft.city} onChange={(v) => setDraft((d) => ({...d, city:v}))} /><FieldEdit label="Telefone" value={draft.phone} onChange={(v) => setDraft((d) => ({...d, phone:v}))} /><FieldEdit label="E-mail" value={draft.email} onChange={(v) => setDraft((d) => ({...d, email:v}))} /></div><Button variant="quiet" size="sm" className="mt-4" onClick={() => void saveProfile()}>Salvar alterações</Button></SettingsCard>
       <ServiceCatalogSettings settings={settings} onSettings={onSettings} />
       <MfaSettings />
@@ -916,6 +923,7 @@ function ServiceCatalogSettings({ settings, onSettings }: { settings: AppSetting
 }
 
 function MfaSettings() {
+  const { isTestMode } = useAuth();
   const [factorId, setFactorId] = useState<string | null>(null);
   const [verified, setVerified] = useState(false);
   const [qr, setQr] = useState("");
@@ -923,21 +931,21 @@ function MfaSettings() {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const refresh = useCallback(async () => {
-    if (!supabase) return;
+    if (isTestMode || !supabase) return;
     const { data, error } = await supabase.auth.mfa.listFactors();
     if (error) { setMessage(error.message); return; }
     const factor = data.totp.find((x) => x.status === "verified") ?? data.totp[0];
     setFactorId(factor?.id ?? null); setVerified(factor?.status === "verified");
-  }, []);
+  }, [isTestMode]);
   useEffect(() => { void refresh(); }, [refresh]);
   const startEnroll = async () => {
-    if (!supabase) return;
+    if (isTestMode || !supabase) return;
     const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "Prontuário Anna" });
     if (error) { setMessage(error.message); return; }
     setFactorId(data.id); setQr(data.totp.qr_code); setSecret(data.totp.secret); setMessage("Escaneie o QR Code no Google Authenticator e confirme o código.");
   };
   const confirmEnroll = async () => {
-    if (!supabase || !factorId || !/^\d{6}$/.test(code)) return;
+    if (isTestMode || !supabase || !factorId || !/^\d{6}$/.test(code)) return;
     const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
     if (challengeError) { setMessage(challengeError.message); return; }
     const { error } = await supabase.auth.mfa.verify({ factorId, challengeId: challenge.id, code });
@@ -945,11 +953,12 @@ function MfaSettings() {
     setQr(""); setSecret(""); setCode(""); setMessage("Autenticador configurado com sucesso."); await refresh();
   };
   const qrSrc = qr.startsWith("<svg") ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qr)}` : qr;
+  if (isTestMode) return <SettingsCard title="Google Authenticator / 2FA" description="O perfil de teste não usa Supabase Auth."><div className="rounded-xl border border-border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">A autenticação do seu perfil de homologação é validada pelo Cloudflare. O Google Authenticator da conta real da Ana permanece totalmente separado.</div></SettingsCard>;
   return <SettingsCard title="Google Authenticator / 2FA" description="Obrigatório para abrir qualquer prontuário.">{verified ? <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs"><div className="flex items-center gap-2 font-medium text-primary"><ShieldCheck className="size-4" /> Autenticador ativo</div><p className="mt-2 text-muted-foreground">Cada prontuário solicitará um novo código de 6 dígitos.</p></div> : <div><Button variant="dashboard" size="sm" onClick={() => void startEnroll()}>Configurar autenticador</Button>{qr && <div className="mt-4"><img src={qrSrc} alt="QR Code do autenticador" className="size-44 rounded-xl bg-white p-2" /><p className="mt-2 break-all text-[10px] text-muted-foreground">Chave manual: {secret}</p><div className="mt-3 flex gap-2"><input inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-center font-mono tracking-[0.3em]" placeholder="000000" /><Button variant="dashboard" onClick={() => void confirmEnroll()}>Confirmar</Button></div></div>}</div>}{message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}</SettingsCard>;
 }
 
 function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey | null) => void; onSettings: (s: AppSettingsRow) => void }) {
-  const { user } = useAuth();
+  const { user, isTestMode } = useAuth();
   const legacyConfigured = Boolean(settings?.vault_salt && settings?.vault_verifier_ciphertext && settings?.vault_verifier_iv);
   const recoverableConfigured = Boolean(
     settings?.vault_version === 3
@@ -994,6 +1003,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
   });
 
   const activateEmailRecovery = async (key: CryptoKey) => {
+    if (isTestMode) throw new Error("No perfil de teste, o cofre usa apenas senha e código de recuperação local. Nenhum e-mail é enviado.");
     const envelope = await provisionVaultEmailRecovery(key);
     const saved = await saveAppSettings({
       vault_email_recovery_ciphertext: envelope.ciphertext,
@@ -1005,6 +1015,7 @@ function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { setting
   };
 
   const sendVaultRecoveryEmail = async () => {
+    if (isTestMode) throw new Error("A recuperação por e-mail não é usada no perfil de teste para manter o Supabase totalmente isolado.");
     if (!supabase || !user?.email) throw new Error("Não foi possível identificar o e-mail cadastrado da conta.");
     const redirectTo = `${window.location.origin}${window.location.pathname}?mode=vault-recovery`;
     const { error } = await supabase.auth.signInWithOtp({
@@ -1706,6 +1717,7 @@ function MaterialModal({ onClose, onSaved }: { onClose: () => void; onSaved: () 
 }
 
 function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onSettings, onRecover, onClose, onVerified }: { patient: PatientView; settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey) => void; onSettings: (s: AppSettingsRow) => void; onRecover: () => void; onClose: () => void; onVerified: () => void }) {
+  const { isTestMode } = useAuth();
   const [phase, setPhase] = useState<"checking"|"totp"|"vault"|"recovery"|"blocked">("checking");
   const [factorId, setFactorId] = useState("");
   const [code, setCode] = useState("");
@@ -1723,6 +1735,13 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onSettings, o
   );
 
   useEffect(()=>{(async()=>{
+    if (isTestMode) {
+      if(!legacyConfigured&&!recoverableConfigured){setPhase("blocked");setError("Crie o cofre clínico em Configurações antes de abrir prontuários.");return;}
+      if (vaultKey) { onVerified(); return; }
+      setGranted(true);
+      setPhase("vault");
+      return;
+    }
     if(!supabase){setPhase("blocked");setError("Serviço de dados indisponível.");return;}
     const {data,error}=await supabase.auth.mfa.listFactors();
     if(error){setPhase("blocked");setError("Não foi possível verificar o autenticador.");return;}
@@ -1730,7 +1749,7 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onSettings, o
     if(!factor){setPhase("blocked");setError("Configure o Google Authenticator em Configurações antes de abrir prontuários.");return;}
     if(!legacyConfigured&&!recoverableConfigured){setPhase("blocked");setError("Crie o cofre clínico em Configurações antes de abrir prontuários.");return;}
     setFactorId(factor.id);setPhase("totp");
-  })();},[legacyConfigured,recoverableConfigured]);
+  })();},[legacyConfigured,recoverableConfigured,isTestMode,vaultKey,onVerified]);
 
   const closeSecure=()=>{
     if(granted) void revokeClinicalAccess(patient.id).catch(()=>undefined);

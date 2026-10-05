@@ -1,4 +1,31 @@
 import { supabase } from "../../lib/supabase";
+import { isTestMode } from "../../lib/test-mode";
+import {
+  testCancelPatientPackagePlan,
+  testCreateAppointment,
+  testCreateClinicalNote,
+  testCreatePatient,
+  testDeleteAppointment,
+  testDeleteClinicalNote,
+  testDeleteMaterial,
+  testDeletePatient,
+  testGetAppSettings,
+  testGetAppointmentPayment,
+  testListAppointmentPayments,
+  testListAppointments,
+  testListClinicalNotes,
+  testListMaterials,
+  testListPatients,
+  testLoadFinanceHistory,
+  testLoadReports,
+  testMarkAppointmentPaid,
+  testOpenMaterial,
+  testSaveAppSettings,
+  testSavePatientPackagePlan,
+  testUpdateAppointment,
+  testUpdatePatient,
+  testUploadMaterial,
+} from "../../lib/test-data";
 import type {
   AppSettingsRow,
   AppointmentPaymentRow,
@@ -73,6 +100,7 @@ async function detectSafeMime(file: File) {
 }
 
 export async function listPatients() {
+  if (isTestMode()) return testListPatients();
   const client = requireSupabase();
   const [patientsResult, plansResult] = await Promise.all([
     client
@@ -106,6 +134,7 @@ export async function listPatients() {
 }
 
 export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow, "full_name">, clientRequestId = crypto.randomUUID()) {
+  if (isTestMode()) return testCreatePatient(input);
   const client = requireSupabase();
   const fullName = cleanText(input.full_name, 160);
   if (!fullName || fullName.length < 2) throw new Error("Nome do paciente inválido");
@@ -135,6 +164,7 @@ export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow
 }
 
 export async function updatePatient(id: string, patch: Partial<PatientRow>) {
+  if (isTestMode()) return testUpdatePatient(id, patch);
   const client = requireSupabase();
   const allowed: Record<string, unknown> = {};
   if (patch.full_name !== undefined) allowed["full_name"] = cleanText(patch.full_name, 160);
@@ -162,7 +192,8 @@ export async function savePatientPackagePlan(input: {
   installment_count: number;
   first_due_date: string;
   client_request_id?: string;
-}) {
+} ) {
+  if (isTestMode()) return testSavePatientPackagePlan(input);
   const client = requireSupabase();
   const total = safeMoney(input.total_amount);
   if (total <= 0) throw new Error("Informe o valor total do pacote/plano.");
@@ -181,18 +212,21 @@ export async function savePatientPackagePlan(input: {
 }
 
 export async function cancelPatientPackagePlan(patientId: string) {
+  if (isTestMode()) return testCancelPatientPackagePlan(patientId);
   const client = requireSupabase();
   const { error } = await client.rpc("cancel_patient_package_plan", { p_patient_id: patientId });
   if (error) throw error;
 }
 
 export async function deletePatient(id: string) {
+  if (isTestMode()) return testDeletePatient(id);
   const client = requireSupabase();
   const { error } = await client.rpc("archive_patient", { p_id: id });
   if (error) throw error;
 }
 
 export async function listAppointments(startIso: string, endIso: string) {
+  if (isTestMode()) return testListAppointments(startIso, endIso);
   const client = requireSupabase();
   const { data, error } = await client.from("appointments")
     .select("id,patient_id,patient_name,scheduled_at,duration_minutes,modality,status,service_kind,service_name,amount,notes_admin,created_at")
@@ -202,6 +236,7 @@ export async function listAppointments(startIso: string, endIso: string) {
 }
 
 export async function listAllAppointments() {
+  if (isTestMode()) return testListAppointments();
   const client = requireSupabase();
   const pageSize = 500;
   const rows: AppointmentRow[] = [];
@@ -219,6 +254,7 @@ export async function listAllAppointments() {
 }
 
 export async function listAppointmentPayments(appointmentIds: string[]) {
+  if (isTestMode()) return testListAppointmentPayments(appointmentIds);
   const client = requireSupabase();
   if (appointmentIds.length === 0) return [] as AppointmentPaymentRow[];
   const ensure = await client.rpc("ensure_appointment_billings");
@@ -240,6 +276,7 @@ export async function listAppointmentPayments(appointmentIds: string[]) {
 }
 
 export async function getAppointmentPayment(appointmentId: string) {
+  if (isTestMode()) return testGetAppointmentPayment(appointmentId);
   const client = requireSupabase();
   const ensure = await client.rpc("ensure_appointment_billings");
   if (ensure.error) throw ensure.error;
@@ -255,12 +292,14 @@ export async function getAppointmentPayment(appointmentId: string) {
 }
 
 export async function markAppointmentPaid(appointmentId: string, paymentMethod: "pix" | "bank_transfer" | "cash" | "credit_card" | "debit_card" | "other") {
+  if (isTestMode()) return testMarkAppointmentPaid(appointmentId, paymentMethod);
   const client = requireSupabase();
   const { error } = await client.rpc("mark_appointment_paid", { p_appointment_id: appointmentId, p_payment_method: paymentMethod });
   if (error) throw error;
 }
 
 export async function createAppointment(input: Omit<AppointmentRow, "id" | "created_at">, clientRequestId: string = crypto.randomUUID()) {
+  if (isTestMode()) return testCreateAppointment(input);
   const client = requireSupabase();
   const payload = {
     client_request_id: clientRequestId,
@@ -287,6 +326,7 @@ export async function createAppointment(input: Omit<AppointmentRow, "id" | "crea
 }
 
 export async function updateAppointment(id: string, patch: Partial<AppointmentRow>) {
+  if (isTestMode()) return testUpdateAppointment(id, patch);
   const client = requireSupabase();
   const allowed: Record<string, unknown> = {};
   if (patch.patient_id !== undefined) allowed["patient_id"] = patch.patient_id || null;
@@ -306,6 +346,7 @@ export async function updateAppointment(id: string, patch: Partial<AppointmentRo
 
 // Mantém histórico: "excluir" um atendimento apenas o cancela.
 export async function deleteAppointment(id: string, cancelPackagePlan = false) {
+  if (isTestMode()) return testDeleteAppointment(id, cancelPackagePlan);
   const client = requireSupabase();
   // O cancelamento passa pelo banco para que atendimento e financeiro sejam tratados na
   // mesma transação. Quando solicitado pela usuária, o pacote ativo e suas parcelas ainda
@@ -318,6 +359,7 @@ export async function deleteAppointment(id: string, cancelPackagePlan = false) {
 }
 
 export async function listMaterials() {
+  if (isTestMode()) return testListMaterials();
   const client = requireSupabase();
   const { data, error } = await client.from("materials").select("id,title,category,file_path,file_type,notes,created_at").order("created_at", { ascending: false }).limit(MAX_ROWS);
   if (error) throw error;
@@ -325,6 +367,7 @@ export async function listMaterials() {
 }
 
 export async function uploadMaterial(file: File, title: string, category: string, notes: string, clientRequestId = crypto.randomUUID()) {
+  if (isTestMode()) return testUploadMaterial(file, title, category, notes);
   const client = requireSupabase();
   const mime = await detectSafeMime(file);
   const extension = ALLOWED_UPLOADS.get(mime)!;
@@ -356,6 +399,7 @@ export async function uploadMaterial(file: File, title: string, category: string
 }
 
 export async function openMaterial(path: string) {
+  if (isTestMode()) return testOpenMaterial(path);
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
@@ -366,6 +410,7 @@ export async function openMaterial(path: string) {
 }
 
 export async function deleteMaterial(material: MaterialRow) {
+  if (isTestMode()) return testDeleteMaterial(material.id);
   const client = requireSupabase();
   if (material.file_path) {
     const { data: userData, error: userError } = await client.auth.getUser();
@@ -379,6 +424,7 @@ export async function deleteMaterial(material: MaterialRow) {
 }
 
 export async function grantClinicalAccess(patientId: string) {
+  if (isTestMode()) return new Date(Date.now() + 5 * 60_000).toISOString();
   const client = requireSupabase();
   const { data, error } = await client.rpc("grant_clinical_access", { p_patient_id: patientId });
   if (error) throw error;
@@ -386,12 +432,14 @@ export async function grantClinicalAccess(patientId: string) {
 }
 
 export async function revokeClinicalAccess(patientId: string) {
+  if (isTestMode()) return;
   const client = requireSupabase();
   const { error } = await client.rpc("revoke_clinical_access", { p_patient_id: patientId });
   if (error) throw error;
 }
 
 export async function listClinicalNotes(patientId: string) {
+  if (isTestMode()) return testListClinicalNotes(patientId);
   const client = requireSupabase();
   const { data, error } = await client.from("clinical_notes")
     .select("id,patient_id,appointment_id,note_date,title,content_ciphertext,content_iv,archived_at,created_at")
@@ -402,6 +450,7 @@ export async function listClinicalNotes(patientId: string) {
 }
 
 export async function createClinicalNote(input: Omit<ClinicalNoteRow, "id" | "created_at" | "archived_at">, clientRequestId = crypto.randomUUID()) {
+  if (isTestMode()) return testCreateClinicalNote(input);
   const client = requireSupabase();
   const { data, error } = await client.from("clinical_notes").insert({
     client_request_id: clientRequestId,
@@ -423,6 +472,7 @@ export async function createClinicalNote(input: Omit<ClinicalNoteRow, "id" | "cr
 }
 
 export async function deleteClinicalNote(id: string) {
+  if (isTestMode()) return testDeleteClinicalNote(id);
   const client = requireSupabase();
   const { error } = await client.rpc("archive_clinical_note", { p_id: id });
   if (error) throw error;
@@ -444,6 +494,7 @@ function cleanServiceCatalog(value: ServiceCatalogItem[] | undefined) {
 }
 
 export async function getAppSettings() {
+  if (isTestMode()) return testGetAppSettings();
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
@@ -457,6 +508,7 @@ export async function getAppSettings() {
 }
 
 export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
+  if (isTestMode()) return testSaveAppSettings(patch);
   const client = requireSupabase();
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw userError ?? new Error("Usuário não autenticado");
@@ -507,6 +559,7 @@ export async function saveAppSettings(patch: Partial<AppSettingsRow>) {
 }
 
 export async function loadReports(startDate: string, endExclusive: string): Promise<ReportsBundle> {
+  if (isTestMode()) return testLoadReports(startDate, endExclusive);
   const client = requireSupabase();
   const ensureFixed = await client.rpc("ensure_fixed_expenses", { p_month: startDate });
   if (ensureFixed.error) throw ensureFixed.error;
@@ -531,6 +584,7 @@ export async function loadReports(startDate: string, endExclusive: string): Prom
 }
 
 export async function loadFinanceHistory(startDate: string, endExclusive: string) {
+  if (isTestMode()) return testLoadFinanceHistory(startDate, endExclusive);
   const client = requireSupabase();
   const ensureFixed = await client.rpc("ensure_fixed_expenses_range", { p_start: startDate, p_end_exclusive: endExclusive });
   if (ensureFixed.error) throw ensureFixed.error;

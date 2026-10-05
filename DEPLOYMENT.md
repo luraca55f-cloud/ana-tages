@@ -114,3 +114,12 @@ Para cofres anteriores à v2.0.24, a recuperação por e-mail precisa de uma ati
 
 ## v2.0.28 — teste de primeiro acesso
 Use `SQL/09 - Testar primeiro acesso como Ana` para homologar a conta única como uma instalação zerada antes da entrega. Não converta essa conta em monitor técnico durante o ensaio.
+
+## v2.0.32 — acesso de homologação sem Supabase
+
+Antes do deploy, configure no Worker `ana-tages`:
+
+- `TEST_LOGIN_EMAIL` como Variable;
+- `TEST_LOGIN_PASSWORD` como Secret.
+
+Não use prefixo `VITE_`. O perfil de teste é autenticado pelo próprio Worker e os dados de homologação ficam no navegador; nenhum SQL novo é necessário.

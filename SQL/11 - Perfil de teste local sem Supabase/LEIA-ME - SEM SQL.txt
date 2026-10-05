@@ -1,0 +1,12 @@
+V2.0.32 - PERFIL DE TESTE LOCAL
+
+SQL: NÃO.
+
+Esta etapa não cria tabelas, policies, RPCs ou usuários no Supabase.
+O perfil de homologação autentica no Cloudflare Worker e guarda os dados de teste somente no localStorage do navegador.
+
+Configuração necessária no Cloudflare:
+- TEST_LOGIN_EMAIL = e-mail que será usado no acesso de teste (Variable)
+- TEST_LOGIN_PASSWORD = senha forte do acesso de teste (Secret)
+
+NÃO use prefixo VITE_ nessas duas configurações.

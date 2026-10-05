@@ -1,4 +1,6 @@
 import { supabase } from "../../lib/supabase";
+import { isTestMode } from "../../lib/test-mode";
+import { testCreateServiceWorkEntry, testDeleteServiceWorkEntry, testListServiceWorkEntries, testMarkServiceWorkPaid, testUpdateServiceWorkEntry } from "../../lib/test-data";
 import type { ServiceWorkEntry, ServiceWorkEntryInput } from "./types";
 
 const FIELDS = "id,kind,client_name,description,amount,due_date,status,paid_at,payment_method,notes,created_at,updated_at";
@@ -9,6 +11,7 @@ function requireSupabase() {
 }
 
 export async function listServiceWorkEntries(startDate: string, endExclusive: string) {
+  if (isTestMode()) return testListServiceWorkEntries(startDate, endExclusive);
   const client = requireSupabase();
   const { data, error } = await client
     .from("service_work_entries")
@@ -22,6 +25,7 @@ export async function listServiceWorkEntries(startDate: string, endExclusive: st
 }
 
 export async function createServiceWorkEntry(input: ServiceWorkEntryInput) {
+  if (isTestMode()) return testCreateServiceWorkEntry(input);
   const client = requireSupabase();
   const { data, error } = await client.rpc("create_service_work_entry", {
     p_kind: input.kind,
@@ -39,6 +43,7 @@ export async function createServiceWorkEntry(input: ServiceWorkEntryInput) {
 }
 
 export async function updateServiceWorkEntry(id: string, input: ServiceWorkEntryInput) {
+  if (isTestMode()) return testUpdateServiceWorkEntry(id, input);
   const client = requireSupabase();
   const { error } = await client.rpc("update_service_work_entry", {
     p_id: id,
@@ -56,12 +61,14 @@ export async function updateServiceWorkEntry(id: string, input: ServiceWorkEntry
 }
 
 export async function deleteServiceWorkEntry(id: string) {
+  if (isTestMode()) return testDeleteServiceWorkEntry(id);
   const client = requireSupabase();
   const { error } = await client.rpc("delete_service_work_entry", { p_id: id });
   if (error) throw error;
 }
 
 export async function markServiceWorkPaid(id: string, paidAt: string, paymentMethod: string | null) {
+  if (isTestMode()) return testMarkServiceWorkPaid(id, paidAt, paymentMethod);
   const client = requireSupabase();
   const { error } = await client.rpc("mark_service_work_paid", {
     p_id: id,

@@ -1,9 +1,9 @@
-> Versão atual: **v2.0.26**
+> Versão atual: **v2.0.32**
 
 
 > **v2.0.25:** Prestação de Serviço isolada, primeiro acesso com troca obrigatória de senha e documentos financeiros redesenhados.
 
-# TAGES CONSULTORIA ANNA — v2.0.25
+# TAGES CONSULTORIA ANNA — v2.0.32
 
 Pacote reiniciado para uma implantação totalmente nova em **nova conta GitHub + novo projeto Supabase + nova conta Cloudflare**, preservando a estrutura visual e funcional do sistema.
 
@@ -220,3 +220,14 @@ Correção de build/typecheck da interface de requisitos de senha. Sem alteraç�
 ### Ajustes v2.0.31
 - Pacote/plano em modo Parcelado aceita 1x a 60x, inclusive 1x com vencimento no próximo mês.
 - Ao cancelar atendimento de paciente com pacote ativo, o sistema permite cancelar também o pacote e as parcelas pendentes sem apagar pagamentos já registrados.
+
+## v2.0.32 — Perfil de teste local
+
+A aplicação possui agora um perfil de homologação separado da conta clínica. Ele usa a mesma interface e os mesmos módulos, mas pacientes, agenda, financeiro, pacotes, documentos, materiais e Prestação de Serviço são mantidos somente no navegador.
+
+Configuração necessária no Cloudflare Worker:
+
+- `TEST_LOGIN_EMAIL` — Variable de runtime;
+- `TEST_LOGIN_PASSWORD` — Secret de runtime.
+
+Não há SQL nesta etapa. Consulte `TEST_PROFILE_SETUP.md`.

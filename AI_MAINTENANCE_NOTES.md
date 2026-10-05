@@ -317,3 +317,16 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - **Regra de preservação financeira:** pagamentos já recebidos/parciais não são apagados. `cancel_patient_package_plan` só encerra parcelas pendentes sem recebimento e preserva histórico.
 - Não cancelar pacote automaticamente ao cancelar qualquer sessão: a usuária precisa escolher explicitamente, pois uma sessão cancelada pode pertencer a um pacote ainda válido.
 - SQL incremental: `SQL/10 - Parcelamento 1x e cancelamento financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.31.sql`.
+
+## v2.0.32 — perfil de homologação local sem Supabase
+- Adicionado um segundo perfil de acesso para o desenvolvedor testar o sistema sem tocar nos dados reais da psicóloga.
+- O login de homologação usa `TEST_LOGIN_EMAIL` + `TEST_LOGIN_PASSWORD` validados **server-side** pelo Cloudflare Worker. A senha é Secret de runtime e nunca deve usar prefixo `VITE_` nem entrar no Git.
+- A sessão de teste usa cookie HttpOnly/Secure/SameSite=Strict assinado pelo Worker e expira em 8 horas.
+- Quando a sessão de teste está ativa, o `AuthGate` a resolve antes de ler a sessão Supabase; o perfil não usa Supabase Auth para entrar.
+- `src/lib/test-mode.ts` mantém o modo atual; `src/lib/test-data.ts` implementa o banco local de homologação em `localStorage`.
+- Repositórios de clínica, financeiro e Prestação de Serviço desviam todas as operações para o armazenamento local quando `isTestMode()` está ativo. Não adicionar chamadas diretas ao Supabase em telas que precisem funcionar no perfil de teste.
+- O cabeçalho mostra `MODO TESTE • sem Supabase` e possui ação `Zerar testes`. Configurações também possui cartão explícito de homologação.
+- Dados de homologação são por navegador; não sincronizam e podem ser apagados com limpeza do storage. Materiais locais são limitados a 2 MB.
+- 2FA e recuperação de cofre por e-mail não são executados no perfil de teste, porque esses fluxos dependem do Supabase real. Cofre/prontuário pode ser testado localmente com senha/código de recuperação.
+- SQL: NÃO. Pasta `SQL/11 - Perfil de teste local sem Supabase` contém somente orientação.
+- Commit sugerido: `Adicionar perfil de teste local isolado do Supabase v2.0.32`.

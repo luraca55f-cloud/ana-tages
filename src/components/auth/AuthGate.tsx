@@ -3,9 +3,11 @@ import { CheckCircle2, Circle, Eye, EyeOff, LockKeyhole, LogIn, ShieldCheck } fr
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "../ui/button";
 import { idleTimeoutMinutes, isSupabaseConfigured, supabase, turnstileSiteKey } from "../../lib/supabase";
+import { setTestMode as setGlobalTestMode } from "../../lib/test-mode";
 
 type AuthContextValue = {
   user: User | null;
+  isTestMode: boolean;
   signOut: () => Promise<void>;
 };
 
@@ -24,6 +26,7 @@ declare global {
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
+  isTestMode: false,
   signOut: async () => undefined,
 });
 
@@ -101,9 +104,25 @@ function TurnstileWidget({ onToken }: { onToken: (token: string) => void }) {
   return <div className="mt-4 min-h-[65px]" ref={ref} />;
 }
 
+function createTestUser(email: string): User {
+  return {
+    id: "00000000-0000-4000-8000-000000000032",
+    aud: "authenticated",
+    role: "authenticated",
+    email,
+    app_metadata: { tages_role: "test_profile" },
+    user_metadata: { display_name: "Perfil de teste" },
+    identities: [],
+    created_at: new Date().toISOString(),
+  } as User;
+}
+
 export function AuthGate({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [testMode, setTestMode] = useState(false);
+  const testModeRef = useRef(false);
+  const [testLoginEnabled, setTestLoginEnabled] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -162,6 +181,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
     const client = supabase;
     let active = true;
+    let unsubscribe: (() => void) | null = null;
     const recoveryUrl = new URL(window.location.href);
     const recoveryMode = recoveryUrl.searchParams.get("mode");
     const recoveryRequested = recoveryMode === "recovery" || recoveryMode === "vault-recovery";
@@ -176,15 +196,65 @@ export function AuthGate({ children }: { children: ReactNode }) {
       window.history.replaceState({}, "", `${clean.pathname}${clean.search}`);
     };
 
-    // A recuperação usa PKCE com detectSessionInUrl=false. Portanto o código retornado
-    // pelo Supabase precisa ser trocado explicitamente por uma sessão. Como o projeto
-    // exige MFA/AAL2 para alteração de senha, a sessão de recuperação entra primeiro na
-    // confirmação do Google Authenticator e só depois libera "Definir nova senha".
+    const attachSupabaseListener = () => {
+      if (unsubscribe) return;
+      const { data: authListener } = client.auth.onAuthStateChange((event, session) => {
+        if (!active || testModeRef.current) return;
+        setGlobalTestMode(false);
+        setUser(session?.user ?? null);
+        setLoading(false);
+
+        if (event === "PASSWORD_RECOVERY") {
+          setAuthMode("reset");
+          setError("");
+          setNotice("");
+          void resolveMfa();
+          return;
+        }
+
+        if (!session) {
+          setMfaStage("checking");
+          setAuthMode((current) => (current === "reset" || current === "vault-recovery") ? "login" : current);
+        }
+      });
+      unsubscribe = () => authListener.subscription.unsubscribe();
+    };
+
+    // O perfil de homologação é checado ANTES de qualquer leitura de sessão Supabase.
+    // Assim, quando o cookie de teste está ativo, nem autenticação nem dados de homologação
+    // fazem chamadas ao Supabase. Links explícitos de recuperação da conta clínica são a exceção.
     const initialize = async () => {
+      if (!recoveryRequested) {
+        try {
+          const infoResponse = await fetch("/api/test-auth/info", { cache: "no-store" });
+          const info = await infoResponse.json() as { enabled?: boolean };
+          if (active) setTestLoginEnabled(Boolean(info.enabled));
+
+          const testSessionResponse = await fetch("/api/test-auth/session", { cache: "no-store", credentials: "same-origin" });
+          const testSession = await testSessionResponse.json() as { authenticated?: boolean; email?: string | null };
+          if (active && testSession.authenticated && testSession.email) {
+            const normalizedEmail = testSession.email.toLowerCase();
+            setGlobalTestMode(true, normalizedEmail);
+            testModeRef.current = true;
+            setTestMode(true);
+            setUser(createTestUser(normalizedEmail));
+            setMfaStage("ready");
+            setLoading(false);
+            return;
+          }
+        } catch (testError) {
+          console.warn("Test profile session check failed", testError);
+        }
+      }
+
+      setGlobalTestMode(false);
+      testModeRef.current = false;
+      setTestMode(false);
+      attachSupabaseListener();
+
       if (recoveryRequested && recoveryCode) {
         const { data: recovered, error: exchangeError } = await client.auth.exchangeCodeForSession(recoveryCode);
         if (!active) return;
-
         if (exchangeError || !recovered.user) {
           console.error("Password recovery exchange failed", exchangeError);
           clearRecoveryUrl();
@@ -194,7 +264,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
           setLoading(false);
           return;
         }
-
         clearRecoveryUrl();
         setUser(recovered.user);
         setAuthMode(vaultRecoveryRequested ? "vault-recovery" : "reset");
@@ -213,35 +282,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
       if (currentUser) await resolveMfa();
     };
 
-    const { data: authListener } = client.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
-      setUser(session?.user ?? null);
-      setLoading(false);
-
-      if (event === "PASSWORD_RECOVERY") {
-        setAuthMode("reset");
-        setError("");
-        setNotice("");
-        void resolveMfa();
-        return;
-      }
-
-      if (!session) {
-        setMfaStage("checking");
-        setAuthMode((current) => (current === "reset" || current === "vault-recovery") ? "login" : current);
-      }
-    });
-
     void initialize();
-
     return () => {
       active = false;
-      authListener.subscription.unsubscribe();
+      unsubscribe?.();
     };
   }, [resolveMfa]);
 
   useEffect(() => {
-    if (!user || mfaStage !== "ready" || !supabase) return;
+    if (testMode || !user || mfaStage !== "ready" || !supabase) return;
     const client = supabase;
     let timer: ReturnType<typeof setTimeout>;
     const reset = () => {
@@ -255,10 +304,10 @@ export function AuthGate({ children }: { children: ReactNode }) {
       clearTimeout(timer);
       events.forEach((event) => window.removeEventListener(event, reset));
     };
-  }, [user, mfaStage]);
+  }, [user, mfaStage, testMode]);
 
   useEffect(() => {
-    if (!user || mfaStage !== "ready" || !supabase) return;
+    if (testMode || !user || mfaStage !== "ready" || !supabase) return;
     const client = supabase;
     let active = true;
     const verifyServerSession = async () => {
@@ -268,16 +317,26 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
     const interval = window.setInterval(() => { void verifyServerSession(); }, 5 * 60_000);
     return () => { active = false; window.clearInterval(interval); };
-  }, [user, mfaStage]);
+  }, [user, mfaStage, testMode]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
+      isTestMode: testMode,
       signOut: async () => {
+        if (testMode) {
+          await fetch("/api/test-auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => undefined);
+          setGlobalTestMode(false);
+          testModeRef.current = false;
+          setTestMode(false);
+          setUser(null);
+          setMfaStage("checking");
+          return;
+        }
         if (supabase) await supabase.auth.signOut({ scope: "local" });
       },
     }),
-    [user],
+    [user, testMode],
   );
 
   if (loading) return <CenteredCard icon={<ShieldCheck className="size-5" />} title="Carregando ambiente seguro..." />;
@@ -469,7 +528,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // Contas criadas a partir desta versão recebem `must_change_password=true` por trigger
   // no Supabase. Assim o responsável pode entregar uma senha temporária para a Ana sem
   // deixar essa senha como credencial definitiva. A troca ocorre antes do uso do sistema.
-  if (isSupabaseConfigured && user && authMode === "login" && user.user_metadata?.["must_change_password"] === true) {
+  if (!testMode && isSupabaseConfigured && user && authMode === "login" && user.user_metadata?.["must_change_password"] === true) {
     const verifyExistingFirstAccessMfa = async () => {
       if (!supabase || !factorId || !/^\d{6}$/.test(mfaCode)) {
         setError("Informe o código de 6 dígitos do Google Authenticator.");
@@ -602,6 +661,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
         setError("Informe o e-mail de acesso.");
         return;
       }
+      if (testLoginEnabled) {
+        try {
+          const matchResponse = await fetch("/api/test-auth/match", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: email.trim() }) });
+          const match = await matchResponse.json() as { matched?: boolean };
+          if (match.matched) {
+            setError("A senha do perfil de teste é administrada no Cloudflare e não usa recuperação pelo Supabase.");
+            return;
+          }
+        } catch { /* Se o endpoint de teste estiver indisponível, o fluxo clínico continua normalmente. */ }
+      }
       setSubmitting(true);
       setError("");
       setNotice("");
@@ -613,7 +682,43 @@ export function AuthGate({ children }: { children: ReactNode }) {
     };
 
     const login = async () => {
-      if (!supabase || !email.trim() || !password) return;
+      if (!email.trim() || !password) return;
+
+      if (testLoginEnabled) {
+        setSubmitting(true);
+        setError("");
+        try {
+          const response = await fetch("/api/test-auth/login", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ email: email.trim(), password }),
+          });
+          const payload = await response.json() as { ok?: boolean; email?: string; matched?: boolean; error?: string };
+          if (response.ok && payload.ok && payload.email) {
+            const normalizedEmail = payload.email.toLowerCase();
+            setGlobalTestMode(true, normalizedEmail);
+            testModeRef.current = true;
+            setTestMode(true);
+            setUser(createTestUser(normalizedEmail));
+            setMfaStage("ready");
+            setPassword("");
+            setNotice("");
+            setSubmitting(false);
+            return;
+          }
+          if (payload.matched) {
+            setError(payload.error || "Credenciais inválidas para o perfil de teste.");
+            setSubmitting(false);
+            return;
+          }
+        } catch {
+          // Falha no endpoint de teste não deve impedir o login clínico normal.
+        }
+        setSubmitting(false);
+      }
+
+      if (!supabase) return;
       if (Date.now() < blockedUntil.current) {
         setError("Muitas tentativas. Aguarde alguns segundos antes de tentar novamente.");
         return;
@@ -667,7 +772,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <section className="dashboard-card w-full max-w-md rounded-3xl p-7 sm:p-8">
           <div className="flex items-center gap-3"><span className="grid size-12 place-items-center rounded-2xl bg-primary font-display text-sm font-bold text-primary-foreground">AK</span><div><p className="text-sm font-semibold">Anna Karina Dias</p><p className="mt-0.5 text-[11px] text-muted-foreground">Acesso administrativo protegido</p></div></div>
           <h1 className="mt-7 font-display text-2xl">Entrar no consultório</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">Após a senha, o autenticador será obrigatório.</p>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Após a senha, o autenticador será obrigatório para a conta clínica.</p>
+          {testLoginEnabled && <p className="mt-2 text-[11px] text-muted-foreground">Seu perfil de homologação usa esta mesma tela, mas mantém os dados de teste somente neste navegador.</p>}
           <div className="mt-6 space-y-4">
             <label className="block"><span className="mb-1.5 block text-[10px] font-medium text-muted-foreground">E-mail</span><input value={email} onChange={(event) => setEmail(event.target.value.slice(0, 254))} className="h-11 w-full rounded-xl border border-border bg-background/70 px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30" autoComplete="email" /></label>
             <label className="block">
@@ -682,7 +788,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
           <TurnstileWidget onToken={setCaptchaToken} />
           {notice && <p className="mt-3 text-xs text-primary">{notice}</p>}
           {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-          <Button variant="dashboard" className="mt-6 w-full" onClick={() => void login()} disabled={submitting || !email.trim() || !password || Boolean(turnstileSiteKey && !captchaToken)}><LogIn /> {submitting ? "Entrando..." : "Entrar"}</Button>
+          <Button variant="dashboard" className="mt-6 w-full" onClick={() => void login()} disabled={submitting || !email.trim() || !password}><LogIn /> {submitting ? "Entrando..." : "Entrar"}</Button>
         </section>
       </main>
     );

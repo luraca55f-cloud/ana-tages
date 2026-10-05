@@ -1,4 +1,17 @@
 import { supabase } from "../../lib/supabase";
+import { isTestMode } from "../../lib/test-mode";
+import {
+  testCreateExpense,
+  testCreateRevenue,
+  testDeleteExpense,
+  testDeleteRevenueReceipt,
+  testLoadFinanceBundle,
+  testMarkExpensePaid,
+  testMarkRevenuePaid,
+  testUpdateExpense,
+  testUpdatePatientBilling,
+  testUpdateRevenueReceipt,
+} from "../../lib/test-data";
 import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, PaymentMethod, RevenueSource } from "./types";
 
 const MAX_ROWS = 1_000;
@@ -36,6 +49,7 @@ function cleanMoney(value: number) {
 }
 
 export async function loadFinanceBundle(month: string, includeReceivableDetails = false): Promise<FinanceBundle> {
+  if (isTestMode()) return testLoadFinanceBundle(month, includeReceivableDetails);
   if (!supabase) throw new Error("Supabase não configurado");
   const ensure = await supabase.rpc("ensure_appointment_billings");
   if (ensure.error) throw ensure.error;
@@ -107,7 +121,8 @@ export async function createRevenue(input: {
   status: "pending" | "paid";
   payment_method?: PaymentMethod | null;
   client_request_id?: string;
-}) {
+} ) {
+  if (isTestMode()) return testCreateRevenue(input);
   if (!supabase) throw new Error("Supabase não configurado");
   const amount = cleanMoney(input.amount);
   const { error } = await supabase.rpc("create_manual_revenue", {
@@ -135,6 +150,7 @@ export async function createExpense(input: {
   status: "pending" | "paid";
   client_request_id?: string;
 }) {
+  if (isTestMode()) return testCreateExpense(input);
   if (!supabase) throw new Error("Supabase não configurado");
   const allowedCategories = new Set(["transporte","contador_inss","aluguel","condominio","faxina","internet","outros_fixos","outros"]);
   if (!allowedCategories.has(input.category)) throw new Error("Categoria inválida");
@@ -162,6 +178,7 @@ export async function createExpense(input: {
 }
 
 export async function markExpensePaid(id: string) {
+  if (isTestMode()) return testMarkExpensePaid(id);
   if (!supabase) throw new Error("Supabase não configurado");
   const { error } = await supabase.rpc("mark_expense_paid", { p_id: id });
   if (error) throw error;
@@ -177,6 +194,7 @@ export async function updateExpense(input: {
   recurrence: "fixed" | "variable";
   status: "pending" | "paid";
 }) {
+  if (isTestMode()) return testUpdateExpense({ ...input, paid_at: input.status === "paid" ? input.competence_date : null, fixed_rule_id: null });
   if (!supabase) throw new Error("Supabase não configurado");
   const allowedCategories = new Set(["transporte","contador_inss","aluguel","condominio","faxina","internet","outros_fixos","outros"]);
   if (!allowedCategories.has(input.category)) throw new Error("Categoria inválida");
@@ -194,12 +212,14 @@ export async function updateExpense(input: {
 }
 
 export async function deleteExpense(id: string) {
+  if (isTestMode()) return testDeleteExpense(id);
   if (!supabase) throw new Error("Supabase não configurado");
   const { error } = await supabase.rpc("delete_expense", { p_id: id });
   if (error) throw error;
 }
 
 export async function markRevenuePaid(id: string, _amount?: number) {
+  if (isTestMode()) return testMarkRevenuePaid(id);
   if (!supabase) throw new Error("Supabase não configurado");
   const { error } = await supabase.rpc("mark_billing_paid", { p_id: id });
   if (error) throw error;
@@ -209,6 +229,7 @@ export async function markRevenuePaid(id: string, _amount?: number) {
 // Isso permite corrigir valor/data de um recebimento lançado incorretamente e preserva
 // vínculos automáticos com sessão, pacote, paciente ou serviço.
 export async function updateRevenueReceipt(input: { id: string; received_amount: number; received_at: string; payment_method: PaymentMethod }) {
+  if (isTestMode()) return testUpdateRevenueReceipt(input);
   if (!supabase) throw new Error("Supabase não configurado");
   const { error } = await supabase.rpc("update_billing_receipt", {
     p_id: input.id,
@@ -222,12 +243,14 @@ export async function updateRevenueReceipt(input: { id: string; received_amount:
 // "Excluir recebimento" significa desfazer a baixa e devolver a cobrança para A receber.
 // Nunca remove a billing_entry, evitando perda de rastreabilidade financeira.
 export async function deleteRevenueReceipt(id: string) {
+  if (isTestMode()) return testDeleteRevenueReceipt(id);
   if (!supabase) throw new Error("Supabase não configurado");
   const { error } = await supabase.rpc("delete_billing_receipt", { p_id: id });
   if (error) throw error;
 }
 
 export async function updatePatientBilling(input: PatientBilling) {
+  if (isTestMode()) return testUpdatePatientBilling(input);
   if (!supabase) throw new Error("Supabase não configurado");
   const model = input.billing_model === "package" ? "package" : "session";
 
