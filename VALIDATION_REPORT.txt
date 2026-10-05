@@ -1,13 +1,10 @@
-ANA TAGES v2.0.36 — relatório de validação
+ANA TAGES v2.0.37 — relatório de validação
 
-- Versão do pacote: 2.0.36.
-- Verificação estrutural: 29 arquivos de fonte conferidos por scripts/verify-project.mjs.
-- TypeScript: checagem interna estrita executada sem diagnósticos nas fontes alteradas e no projeto, usando stubs locais apenas para dependências externas durante a validação.
-- Pacientes: cards clicáveis + detalhe com sessões realmente vinculadas.
-- Atendimento: cobrança única ou parcelamento 2x–60x com primeiro vencimento.
-- Financeiro: parcelas de atendimento entram separadamente em A receber; pagamentos existentes são preservados.
-- Cancelamento: pendências sem recebimento são canceladas; parcial é encerrada no valor já recebido; pago permanece preservado.
-- Perfil de teste: mesma regra financeira em armazenamento local, sem gravação no Supabase.
-- SQL incremental novo: SQL/13 - Pacientes em cards e parcelamento por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.36.sql.
-- SQL 12 no pacote foi atualizado para a revisão corrigida final solicitada anteriormente.
-- Build Vite completo depende das dependências npm do projeto e será novamente executado pelo pipeline do Cloudflare no deploy.
+- Versão do pacote: 2.0.37.
+- Alteração: botão Nova sessão dentro da visão detalhada do paciente.
+- Paciente é pré-selecionado no modal de atendimento.
+- Serviço de sessão é priorizado para o fluxo iniciado pelo paciente.
+- Regras atuais de pacote, cobrança única e parcelamento foram reaproveitadas sem alteração de banco.
+- SQL novo: NÃO.
+- `npm run verify:project`: OK — 29 arquivos de fonte verificados; imports locais e dependências conferidos.
+- Typecheck/build local completo: não executado porque as dependências do projeto não estão instaladas no ambiente de empacotamento; a validação final ocorrerá no pipeline do Cloudflare.

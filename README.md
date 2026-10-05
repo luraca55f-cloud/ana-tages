@@ -277,3 +277,11 @@ Não há SQL nesta etapa. Consulte `TEST_PROFILE_SETUP.md`.
 - Sessão incluída em pacote não ganha cobrança individual.
 - O mesmo comportamento existe no perfil real da Ana e no perfil local de homologação.
 - SQL incremental: `SQL/13 - Pacientes em cards e parcelamento por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.36.sql`.
+
+## v2.0.37 — Nova sessão pelo paciente
+Na visão detalhada de cada paciente existe agora o botão **Nova sessão**. Ele abre o cadastro de atendimento com o paciente já selecionado e prioriza um serviço do tipo sessão, reaproveitando a mesma regra de cobrança/parcelamento existente no sistema.
+
+- Paciente por sessão: valor padrão é preenchido quando configurado.
+- Paciente com pacote/plano: a sessão continua sem cobrança individual.
+- Após salvar, a nova sessão aparece na lista de sessões vinculadas do paciente.
+- SQL novo: **não**.

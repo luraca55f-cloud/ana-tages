@@ -495,7 +495,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.36 • sem gravação no Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.37 • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
@@ -507,7 +507,7 @@ function ConsultorioApp() {
         <main className="mx-auto max-w-[1460px] p-4 sm:p-7">
           {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} loading={loadingCore} loadError={coreLoadError} openModule={openModule} openRecord={setRecordPatient} onQuickAction={runQuickAction} openFinanceTab={openFinanceTab} />}
           {activeModule === "Agenda" && <AgendaPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
-          {activeModule === "Pacientes" && <PatientsPage patients={patientViews} appointments={appointments} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
+          {activeModule === "Pacientes" && <PatientsPage patients={patientViews} appointments={appointments} services={availableServices(settings)} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
           {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} initialCreate={pendingQuickAction === "session"} onInitialCreateHandled={() => setPendingQuickAction(null)} />}
           {activeModule === "Financeiro" && <FinancePageV2 initialModal={pendingQuickAction === "expense" ? "expense" : pendingQuickAction === "revenue" ? "revenue" : null} onInitialModalHandled={() => setPendingQuickAction(null)} initialTab={pendingFinanceTab} onInitialTabHandled={() => setPendingFinanceTab(null)} />}
           {activeModule === "Prestação de Serviço" && <ServiceWorkPage />}
@@ -664,9 +664,10 @@ function AgendaPage({ patients, services, onChanged }: { patients: PatientRow[];
   </>;
 }
 
-function PatientsPage({ patients, appointments, onNew, onEdit, onRecord, onChanged }: { patients: PatientView[]; appointments: AppointmentRow[]; onNew: () => void; onEdit: (p: PatientRow) => void; onRecord: (p: PatientView) => void; onChanged: () => Promise<void> }) {
+function PatientsPage({ patients, appointments, services, onNew, onEdit, onRecord, onChanged }: { patients: PatientView[]; appointments: AppointmentRow[]; services: ServiceCatalogItem[]; onNew: () => void; onEdit: (p: PatientRow) => void; onRecord: (p: PatientView) => void; onChanged: () => Promise<void> }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<PatientView | null>(null);
+  const [sessionPatient, setSessionPatient] = useState<PatientView | null>(null);
   const visible = patients.filter((p) => {
     const normalizedQuery = cpfDigits(query);
     return p.full_name.toLowerCase().includes(query.toLowerCase())
@@ -697,11 +698,12 @@ function PatientsPage({ patients, appointments, onNew, onEdit, onRecord, onChang
       {visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}
     </section>
     <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Cada abertura exige código TOTP. O conteúdo das evoluções é criptografado no navegador antes de ser armazenado.</p></div></div></section>
-    {selected && <PatientDetailsModal patient={selected} appointments={patientAppointments(selected.id)} onClose={() => setSelected(null)} onEdit={() => { setSelected(null); onEdit(selected); }} onRecord={() => { setSelected(null); onRecord(selected); }} />}
+    {selected && <PatientDetailsModal patient={selected} appointments={patientAppointments(selected.id)} onClose={() => setSelected(null)} onEdit={() => { setSelected(null); onEdit(selected); }} onRecord={() => { setSelected(null); onRecord(selected); }} onNewSession={() => { setSelected(null); setSessionPatient(selected); }} />}
+    {sessionPatient && <AppointmentModal patients={patients} services={services} appointment={null} defaultDate={isoDateLocal()} defaultPatientId={sessionPatient.id} defaultServiceKind="session" onClose={() => setSessionPatient(null)} onSaved={async () => { setSessionPatient(null); await onChanged(); }} />}
   </>;
 }
 
-function PatientDetailsModal({ patient, appointments, onClose, onEdit, onRecord }: { patient: PatientView; appointments: AppointmentRow[]; onClose: () => void; onEdit: () => void; onRecord: () => void }) {
+function PatientDetailsModal({ patient, appointments, onClose, onEdit, onRecord, onNewSession }: { patient: PatientView; appointments: AppointmentRow[]; onClose: () => void; onEdit: () => void; onRecord: () => void; onNewSession: () => void }) {
   const sessions = appointments.filter((item) => item.service_kind === "session").sort((a, b) => +new Date(b.scheduled_at) - +new Date(a.scheduled_at));
   const completed = sessions.filter((item) => item.status === "completed").length;
   const upcoming = sessions.filter((item) => ["scheduled", "confirmed"].includes(item.status) && new Date(item.scheduled_at).getTime() >= Date.now()).length;
@@ -716,7 +718,7 @@ function PatientDetailsModal({ patient, appointments, onClose, onEdit, onRecord 
         <MiniFeature icon={<CalendarDays />} title="Próximas" text={String(upcoming)} />
         <MiniFeature icon={<ClipboardList />} title="Faltas / canceladas" text={`${noShow} falta(s) • ${cancelled} cancelada(s)`} />
       </div>
-      <div className="mt-5 flex flex-wrap gap-2"><Button variant="dashboard" size="sm" onClick={onEdit}><Pencil /> Editar paciente</Button><Button variant="quiet" size="sm" onClick={onRecord}><LockKeyhole /> Abrir prontuário</Button></div>
+      <div className="mt-5 flex flex-wrap gap-2"><Button variant="dashboard" size="sm" onClick={onNewSession}><Plus /> Nova sessão</Button><Button variant="quiet" size="sm" onClick={onEdit}><Pencil /> Editar paciente</Button><Button variant="quiet" size="sm" onClick={onRecord}><LockKeyhole /> Abrir prontuário</Button></div>
       <div className="mt-6"><div className="flex items-center justify-between gap-3"><div><h3 className="font-display text-lg">Sessões vinculadas</h3><p className="mt-1 text-[10px] text-muted-foreground">Aqui aparecem as sessões cadastradas para este paciente. O sistema não inventa quantidade contratada: em pacote/plano, são exibidas as sessões efetivamente vinculadas ao paciente.</p></div><span className="rounded-full bg-accent px-2.5 py-1 text-[10px] font-semibold">{sessions.length} sessão(ões)</span></div>
         <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">{sessions.map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-background/50 p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="text-xs font-semibold">{dateTimeLabel(item.scheduled_at)} • {appointmentServiceLabel(item)}</p><p className="mt-1 text-[10px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min • {patient.billing_model === "package" ? "Incluída no pacote/plano" : money(item.amount)}</p></div><StatusBadge status={statusLabel(item.status)} /></article>)}{sessions.length === 0 && <Empty text="Nenhuma sessão vinculada a este paciente." />}</div>
       </div>
@@ -1584,7 +1586,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   </ModalShell>;
 }
 
-function AppointmentModal({ patients, services, appointment, defaultDate, onClose, onSaved }: { patients: PatientRow[]; services: ServiceCatalogItem[]; appointment: AppointmentRow | null; defaultDate: string; onClose: () => void; onSaved: () => Promise<void> }) {
+function AppointmentModal({ patients, services, appointment, defaultDate, defaultPatientId, defaultServiceKind, onClose, onSaved }: { patients: PatientRow[]; services: ServiceCatalogItem[]; appointment: AppointmentRow | null; defaultDate: string; defaultPatientId?: string; defaultServiceKind?: ServiceCatalogItem["kind"]; onClose: () => void; onSaved: () => Promise<void> }) {
   const requestId = useRef(crypto.randomUUID()).current;
   const initialDateTime = appointment ? new Date(appointment.scheduled_at) : new Date(`${defaultDate}T09:00:00`);
   const localValue = `${isoDateLocal(initialDateTime)}T${String(initialDateTime.getHours()).padStart(2,"0")}:${String(initialDateTime.getMinutes()).padStart(2,"0")}`;
@@ -1592,16 +1594,28 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
   const matchingCurrent = appointment ? services.find((item) => item.kind === appointment.service_kind && item.name === appointmentServiceLabel(appointment)) : undefined;
   const legacyCurrent: ServiceCatalogItem | null = appointment && !matchingCurrent ? { id: "__current__", name: appointmentServiceLabel(appointment), kind: appointment.service_kind, active: true } : null;
   const serviceOptions = legacyCurrent ? [legacyCurrent, ...activeServices] : activeServices;
-  const initialServiceId = matchingCurrent?.id ?? legacyCurrent?.id ?? activeServices[0]?.id ?? "";
+  const preferredNewService = !appointment && defaultServiceKind ? activeServices.find((item) => item.kind === defaultServiceKind) : undefined;
+  const initialServiceId = matchingCurrent?.id ?? legacyCurrent?.id ?? preferredNewService?.id ?? activeServices[0]?.id ?? "";
+  const initialPatient = !appointment && defaultPatientId ? patients.find((item) => item.id === defaultPatientId) : undefined;
+  const initialService = serviceOptions.find((item) => item.id === initialServiceId) ?? null;
+  const initialAmount = appointment
+    ? String(appointment.amount ?? "")
+    : initialPatient && initialService?.kind === "session"
+      ? initialPatient.billing_model === "package"
+        ? ""
+        : initialPatient.session_amount != null && initialPatient.session_amount > 0
+          ? String(initialPatient.session_amount).replace(".", ",")
+          : ""
+      : "";
 
-  const [patientId, setPatientId] = useState(appointment?.patient_id ?? "");
-  const [name, setName] = useState(appointment?.patient_name ?? "");
+  const [patientId, setPatientId] = useState(appointment?.patient_id ?? initialPatient?.id ?? "");
+  const [name, setName] = useState(appointment?.patient_name ?? initialPatient?.full_name ?? "");
   const [when, setWhen] = useState(localValue);
   const [duration, setDuration] = useState(appointment?.duration_minutes ?? 50);
   const [modality, setModality] = useState<"presential"|"online">(appointment?.modality ?? "presential");
   const [status, setStatus] = useState<AppointmentStatus>(appointment?.status ?? "scheduled");
   const [serviceId, setServiceId] = useState(initialServiceId);
-  const [amount, setAmount] = useState(String(appointment?.amount ?? ""));
+  const [amount, setAmount] = useState(initialAmount);
   const [billingMode, setBillingMode] = useState<"single" | "installments">("single");
   const [installmentCount, setInstallmentCount] = useState(2);
   const [firstDueDate, setFirstDueDate] = useState(localValue.slice(0, 10));

@@ -362,3 +362,13 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - O SQL 12 da v2.0.35 incluído no pacote foi substituído pela revisão final corrigida; para quem já aplicou essa correção, não reexecutar.
 - SQL novo: `SQL/13 - Pacientes em cards e parcelamento por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.36.sql`.
 - Commit sugerido: `Adicionar cards de pacientes e parcelamento por atendimento v2.0.36`.
+
+## v2.0.37 — Nova sessão a partir do paciente
+- A visão detalhada do paciente ganhou o botão `Nova sessão`.
+- O botão abre diretamente o mesmo modal de atendimento já usado no sistema.
+- O paciente do card fica pré-selecionado automaticamente.
+- O serviço de sessão ativo é priorizado no novo atendimento.
+- Para pacientes por sessão, o valor padrão da sessão é preenchido automaticamente; para pacientes com pacote/plano, a sessão permanece incluída no pacote e sem cobrança individual.
+- Ao salvar, a tela de pacientes é atualizada e a nova sessão passa a aparecer em `Sessões vinculadas`.
+- SQL novo: NÃO.
+- Commit sugerido: `Adicionar nova sessão pelo card do paciente v2.0.37`.

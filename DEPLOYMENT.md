@@ -157,3 +157,9 @@ Para atualizar uma instalação que já está na v2.0.35 corrigida:
 5. `Push origin` e aguarde o deployment do Cloudflare ficar `Success`.
 
 O SQL 13 é incremental: não zera pacientes, sessões, cobranças, pacotes ou pagamentos. Pagamentos já registrados são preservados quando um atendimento é reconfigurado ou cancelado.
+
+## v2.0.37 — botão Nova sessão no paciente
+1. SQL a executar: **nenhum**.
+2. Substitua os arquivos do repositório pela v2.0.37, preservando `.git`.
+3. Commit sugerido: `Adicionar nova sessão pelo card do paciente v2.0.37`.
+4. Faça `Push origin` e aguarde o deployment do Cloudflare ficar `Success`.
