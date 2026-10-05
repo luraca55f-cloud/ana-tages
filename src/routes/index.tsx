@@ -122,7 +122,8 @@ function SecureConsultorioApp() {
 function RoleAwareApp() {
   const { user, isTestMode } = useAuth();
   const role = typeof user?.app_metadata?.["tages_role"] === "string" ? user.app_metadata["tages_role"] : "";
-  if (!isTestMode && role === "usage_monitor") return <UsageMonitorPage />;
+  const effectiveTestMode = isTestMode || role === "test_profile";
+  if (!effectiveTestMode && role === "usage_monitor") return <UsageMonitorPage />;
   return <ConsultorioApp />;
 }
 
@@ -399,7 +400,9 @@ function toPatientView(patient: PatientRow, appointments: AppointmentRow[]): Pat
 }
 
 function ConsultorioApp() {
-  const { user, signOut, isTestMode } = useAuth();
+  const { user, signOut, isTestMode: authTestMode } = useAuth();
+  const role = typeof user?.app_metadata?.["tages_role"] === "string" ? user.app_metadata["tages_role"] : "";
+  const isTestMode = authTestMode || role === "test_profile";
   const [activeModule, setActiveModule] = useState<ModuleKey>(() =>
     typeof window !== "undefined" && window.sessionStorage.getItem("tages:vault-email-recovery-authorized") === "1"
       ? "Configurações"
@@ -492,7 +495,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • sem gravação no Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.35 • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>

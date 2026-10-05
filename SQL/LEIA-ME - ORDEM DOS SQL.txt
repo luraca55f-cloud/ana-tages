@@ -28,3 +28,10 @@ ANA TAGES v2.0.27 — NOVO:
   2) ANTES de criar a conta da Ana, execute SQL_02_CONVERTER_CONTA_ATUAL_EM_MONITOR_v2.0.27.sql
 
 A limpeza dos dados antigos continua OPCIONAL e só deve ocorrer após validar a conta da Ana.
+
+ANA TAGES v2.0.35 — NOVO:
+12 - Cobranca imediata por atendimento
+  Execute somente: SQL_ATUALIZACAO_ANA_TAGES_v2.0.35.sql
+
+Objetivo: atendimento ativo com valor entra imediatamente em A receber; cancelado sai da carteira; sessão em pacote continua sem cobrança individual.
+Não execute novamente as pastas antigas apenas por causa desta atualização.

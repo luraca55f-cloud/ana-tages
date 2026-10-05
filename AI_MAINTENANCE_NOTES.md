@@ -342,3 +342,10 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Dados de homologação continuam locais; o único acesso ao Supabase nesse perfil é leitura agregada do painel de uso.
 - SQL: NÃO.
 - Commit sugerido: `Corrigir login de teste e adicionar uso do Supabase v2.0.33`.
+
+## Atualização v2.0.35 — cobrança imediata e robustez do perfil de teste
+- Atendimento ativo com valor > 0 passa a gerar cobrança `pending` imediatamente em A receber; não depende mais de status `completed`.
+- Atendimento cancelado cancela cobrança pendente; cobrança já paga continua preservada. Sessões cobertas por pacote continuam sem cobrança individual.
+- O perfil de homologação reconhece `app_metadata.tages_role = test_profile` como fallback visual, garantindo que `Uso Supabase` e o selo de teste apareçam mesmo se o estado React de autenticação atrasar.
+- O selo do modo de teste mostra `v2.0.35` para confirmar visualmente qual versão está publicada.
+- SQL novo: `SQL/12 - Cobranca imediata por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.35.sql`.

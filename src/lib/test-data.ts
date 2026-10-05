@@ -195,7 +195,7 @@ function syncAppointmentBilling(db: TestDb, appointment: AppointmentRow) {
   const key = `session:${appointment.id}`;
   const existing = db.billings.find((entry) => entry.id === key || entry.appointment_id === appointment.id);
   const patient = appointment.patient_id ? db.patients.find((p) => p.id === appointment.patient_id) : null;
-  const shouldBill = appointment.status === "completed" && appointment.amount > 0 && patient?.billing_model !== "package";
+  const shouldBill = appointment.status !== "cancelled" && appointment.amount > 0 && patient?.billing_model !== "package";
 
   if (!shouldBill) {
     if (existing && existing.status !== "paid") existing.status = "cancelled";
@@ -235,6 +235,10 @@ function syncAppointmentBilling(db: TestDb, appointment: AppointmentRow) {
     installment_number: null,
     installment_count: null,
   });
+}
+
+function reconcileAppointmentBillings(db: TestDb) {
+  db.appointments.forEach((appointment) => syncAppointmentBilling(db, appointment));
 }
 
 export function testListPatients() {
@@ -418,6 +422,8 @@ export function testDeleteAppointment(id: string, cancelPackagePlan = false) {
 
 export function testListAppointmentPayments(ids: string[]): AppointmentPaymentRow[] {
   const db = readTestDb();
+  reconcileAppointmentBillings(db);
+  writeTestDb(db);
   return db.billings.filter((b) => b.appointment_id && ids.includes(b.appointment_id)).map((b) => ({
     id: b.id,
     appointment_id: b.appointment_id!,
@@ -515,6 +521,8 @@ export function testSaveAppSettings(patch: Partial<AppSettingsRow>) {
 
 export function testLoadReports(startDate: string, endExclusive: string): ReportsBundle {
   const db = readTestDb();
+  reconcileAppointmentBillings(db);
+  writeTestDb(db);
   return {
     appointments: db.appointments.filter((a) => a.scheduled_at.slice(0, 10) >= startDate && a.scheduled_at.slice(0, 10) < endExclusive),
     billings: db.billings.filter((b) => b.competence_date >= startDate && b.competence_date < endExclusive && b.status !== "cancelled").map((b) => ({ id: b.id, source_type: b.source_type, amount: b.amount, received_amount: b.received_amount, status: b.status, competence_date: b.competence_date, received_at: b.received_at })),
@@ -526,6 +534,8 @@ export function testLoadReports(startDate: string, endExclusive: string): Report
 
 export function testLoadFinanceHistory(startDate: string, endExclusive: string) {
   const db = readTestDb();
+  reconcileAppointmentBillings(db);
+  writeTestDb(db);
   return {
     billings: db.billings.filter((b) => b.competence_date >= startDate && b.competence_date < endExclusive && b.status !== "cancelled").map((b) => ({ competence_date: b.competence_date, amount: b.amount, status: b.status })),
     received: db.billings.filter((b) => b.received_at && b.received_at >= startDate && b.received_at < endExclusive && b.received_amount > 0).map((b) => ({ received_at: b.received_at, received_amount: b.received_amount })),
@@ -535,6 +545,8 @@ export function testLoadFinanceHistory(startDate: string, endExclusive: string) 
 
 export function testLoadFinanceBundle(month: string, includeReceivableDetails = false): FinanceBundle {
   const db = readTestDb();
+  reconcileAppointmentBillings(db);
+  writeTestDb(db);
   const start = `${month}-01`;
   const [y, m] = month.split("-").map(Number);
   const next = new Date(Date.UTC(y!, m!, 1)).toISOString().slice(0, 10);

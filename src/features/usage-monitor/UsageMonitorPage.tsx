@@ -29,7 +29,9 @@ function UsageCard({ label, value, note, icon }: { label: string; value: string;
 }
 
 export function UsageMonitorPage({ embedded = false }: { embedded?: boolean }) {
-  const { user, signOut, isTestMode } = useAuth();
+  const { user, signOut, isTestMode: authTestMode } = useAuth();
+  const role = typeof user?.app_metadata?.["tages_role"] === "string" ? user.app_metadata["tages_role"] : "";
+  const isTestMode = authTestMode || role === "test_profile";
   const [snapshot, setSnapshot] = useState<SupabaseUsageSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
