@@ -18,6 +18,7 @@ export type BillingEntry = {
   received_at: string | null;
   payment_method: PaymentMethod | null;
   patient_id?: string | null;
+  appointment_id?: string | null;
   package_plan_id?: string | null;
   installment_number?: number | null;
   installment_count?: number | null;

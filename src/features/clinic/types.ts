@@ -57,6 +57,9 @@ export type AppointmentPaymentRow = {
   received_amount: number;
   received_at: string | null;
   payment_method: "pix" | "bank_transfer" | "cash" | "credit_card" | "debit_card" | "other" | null;
+  due_date: string | null;
+  installment_number: number | null;
+  installment_count: number | null;
 };
 
 export type MaterialRow = {

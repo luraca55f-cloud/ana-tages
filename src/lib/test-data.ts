@@ -193,14 +193,27 @@ function patientWithPlan(db: TestDb, patient: PatientRow): PatientRow {
 
 function syncAppointmentBilling(db: TestDb, appointment: AppointmentRow) {
   const key = `session:${appointment.id}`;
-  const existing = db.billings.find((entry) => entry.id === key || entry.appointment_id === appointment.id);
+  const appointmentEntries = db.billings.filter((entry) => entry.appointment_id === appointment.id);
+  const plannedEntries = appointmentEntries.filter((entry) => entry.installment_count != null && entry.status !== "cancelled");
+  const existing = appointmentEntries.find((entry) => entry.id === key || entry.installment_count == null);
   const patient = appointment.patient_id ? db.patients.find((p) => p.id === appointment.patient_id) : null;
   const shouldBill = appointment.status !== "cancelled" && appointment.amount > 0 && patient?.billing_model !== "package";
 
   if (!shouldBill) {
-    if (existing && existing.status !== "paid") existing.status = "cancelled";
+    appointmentEntries.forEach((entry) => {
+      if (entry.status === "partial" && entry.received_amount > 0) {
+        entry.amount = entry.received_amount;
+        entry.status = "paid";
+      } else if (entry.status !== "paid") {
+        entry.status = "cancelled";
+      }
+    });
     return;
   }
+
+  // Quando existe um parcelamento explícito, ele é a fonte da verdade. A sincronização
+  // automática não recria uma cobrança única por cima das parcelas.
+  if (plannedEntries.length > 0) return;
 
   const date = appointment.scheduled_at.slice(0, 10);
   if (existing) {
@@ -212,6 +225,8 @@ function syncAppointmentBilling(db: TestDb, appointment: AppointmentRow) {
       existing.competence_date = date;
       existing.issued_at = date;
       existing.due_date = date;
+      existing.installment_number = null;
+      existing.installment_count = null;
     }
     return;
   }
@@ -408,7 +423,15 @@ export function testDeleteAppointment(id: string, cancelPackagePlan = false) {
   const row = db.appointments.find((a) => a.id === id);
   if (!row) throw new Error("Atendimento não encontrado");
   row.status = "cancelled";
-  db.billings.forEach((entry) => { if (entry.appointment_id === id && entry.status !== "paid") entry.status = "cancelled"; });
+  db.billings.forEach((entry) => {
+    if (entry.appointment_id !== id) return;
+    if (entry.status === "partial" && entry.received_amount > 0) {
+      entry.amount = entry.received_amount;
+      entry.status = "paid";
+    } else if (entry.status !== "paid") {
+      entry.status = "cancelled";
+    }
+  });
   if (cancelPackagePlan && row.patient_id) {
     const plan = activePlanFor(db, row.patient_id);
     if (plan) {
@@ -424,27 +447,119 @@ export function testListAppointmentPayments(ids: string[]): AppointmentPaymentRo
   const db = readTestDb();
   reconcileAppointmentBillings(db);
   writeTestDb(db);
-  return db.billings.filter((b) => b.appointment_id && ids.includes(b.appointment_id)).map((b) => ({
-    id: b.id,
-    appointment_id: b.appointment_id!,
-    status: b.status,
-    amount: b.amount,
-    received_amount: b.received_amount,
-    received_at: b.received_at,
-    payment_method: b.payment_method,
-  }));
+  return db.billings
+    .filter((b) => b.appointment_id && ids.includes(b.appointment_id) && b.status !== "cancelled")
+    .sort((a, b) => (a.due_date ?? a.competence_date).localeCompare(b.due_date ?? b.competence_date))
+    .map((b) => ({
+      id: b.id,
+      appointment_id: b.appointment_id!,
+      status: b.status,
+      amount: b.amount,
+      received_amount: b.received_amount,
+      received_at: b.received_at,
+      payment_method: b.payment_method,
+      due_date: b.due_date,
+      installment_number: b.installment_number ?? null,
+      installment_count: b.installment_count ?? null,
+    }));
 }
 
 export function testGetAppointmentPayment(id: string): AppointmentPaymentRow | null {
   return testListAppointmentPayments([id])[0] ?? null;
 }
 
+export function testSaveAppointmentBillingPlan(input: {
+  appointment_id: string;
+  payment_mode: "single" | "installments";
+  installment_count: number;
+  first_due_date: string;
+}) {
+  const db = readTestDb();
+  const appointment = db.appointments.find((item) => item.id === input.appointment_id);
+  if (!appointment) throw new Error("Atendimento não encontrado");
+  const patient = appointment.patient_id ? db.patients.find((item) => item.id === appointment.patient_id) : null;
+  const shouldBill = appointment.status !== "cancelled" && appointment.amount > 0 && !(patient?.billing_model === "package" && appointment.service_kind === "session");
+  if (!shouldBill) {
+    db.billings.forEach((entry) => {
+      if (entry.appointment_id !== appointment.id) return;
+      if (entry.status === "partial" && entry.received_amount > 0) {
+        entry.amount = entry.received_amount;
+        entry.status = "paid";
+      } else if (entry.status !== "paid") {
+        entry.status = "cancelled";
+      }
+    });
+    writeTestDb(db);
+    return;
+  }
+  const count = input.payment_mode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(input.installment_count)));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.first_due_date)) throw new Error("Informe o primeiro vencimento.");
+
+  const activeEntries = db.billings
+    .filter((entry) => entry.appointment_id === appointment.id && entry.status !== "cancelled")
+    .sort((a, b) => (a.due_date ?? a.competence_date).localeCompare(b.due_date ?? b.competence_date));
+  const fixed = activeEntries.filter((entry) => entry.received_amount > 0 || entry.status === "paid" || entry.status === "partial");
+  if (fixed.length > count) throw new Error("Não é possível reduzir o parcelamento para menos parcelas do que já possuem recebimento.");
+  const fixedAmount = fixed.reduce((sum, entry) => sum + Number(entry.amount), 0);
+  if (appointment.amount + 0.001 < fixedAmount) throw new Error("O novo valor do atendimento não pode ser menor que o valor já comprometido em parcelas recebidas.");
+
+  db.billings.forEach((entry) => {
+    if (entry.appointment_id === appointment.id && entry.received_amount <= 0 && entry.status !== "paid") entry.status = "cancelled";
+  });
+
+  fixed.forEach((entry, index) => {
+    entry.installment_number = index + 1;
+    entry.installment_count = count;
+    entry.description = count === 1 ? "Atendimento • Pagamento único" : `Atendimento • Parcela ${index + 1}/${count}`;
+  });
+
+  const remainingSlots = count - fixed.length;
+  const remainingTotal = Math.round((appointment.amount - fixedAmount) * 100) / 100;
+  if (remainingSlots === 0) {
+    if (Math.abs(remainingTotal) > 0.001) throw new Error("O atendimento já possui todas as parcelas com recebimento; o valor total não pode ser alterado.");
+    writeTestDb(db);
+    return;
+  }
+  if (remainingTotal <= 0) throw new Error("Não há saldo suficiente para criar as parcelas restantes.");
+
+  const amounts = splitInstallments(remainingTotal, remainingSlots);
+  amounts.forEach((value, index) => {
+    const number = fixed.length + index + 1;
+    const dueDate = monthAdd(input.first_due_date, number - 1);
+    const stableId = `appointment-plan:${appointment.id}:${number}`;
+    const existing = db.billings.find((entry) => entry.id === stableId && entry.received_amount === 0);
+    const payload: TestBillingEntry = {
+      id: stableId,
+      appointment_id: appointment.id,
+      patient_id: appointment.patient_id,
+      source_type: appointment.service_kind,
+      client_name: appointment.patient_name || patient?.full_name || "Atendimento",
+      description: count === 1 ? "Atendimento • Pagamento único" : `Atendimento • Parcela ${number}/${count}`,
+      competence_date: appointment.scheduled_at.slice(0, 10),
+      issued_at: todayIso(),
+      due_date: dueDate,
+      amount: value,
+      status: "pending",
+      received_amount: 0,
+      received_at: null,
+      payment_method: null,
+      package_plan_id: null,
+      installment_number: number,
+      installment_count: count,
+    };
+    if (existing) Object.assign(existing, payload); else db.billings.push(payload);
+  });
+  writeTestDb(db);
+}
+
 export function testMarkAppointmentPaid(appointmentId: string, method: PaymentMethod) {
   const db = readTestDb();
   const appointment = db.appointments.find((a) => a.id === appointmentId);
   if (appointment) syncAppointmentBilling(db, appointment);
-  const billing = db.billings.find((b) => b.appointment_id === appointmentId && b.status !== "cancelled");
-  if (!billing) throw new Error("Cobrança do atendimento não encontrada");
+  const open = db.billings.filter((b) => b.appointment_id === appointmentId && b.status !== "cancelled");
+  if (!open.length) throw new Error("Cobrança do atendimento não encontrada");
+  if (open.length > 1 || Number(open[0]?.installment_count ?? 1) > 1) throw new Error("Baixe as parcelas individualmente no Financeiro.");
+  const billing = open[0]!;
   billing.status = "paid";
   billing.received_amount = billing.amount;
   billing.received_at = todayIso();

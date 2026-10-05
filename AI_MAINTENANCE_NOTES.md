@@ -349,3 +349,16 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - O perfil de homologação reconhece `app_metadata.tages_role = test_profile` como fallback visual, garantindo que `Uso Supabase` e o selo de teste apareçam mesmo se o estado React de autenticação atrasar.
 - O selo do modo de teste mostra `v2.0.35` para confirmar visualmente qual versão está publicada.
 - SQL novo: `SQL/12 - Cobranca imediata por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.35.sql`.
+
+
+## v2.0.36 — pacientes em cards + parcelamento por atendimento
+- `PatientsPage` foi convertida de tabela para cards clicáveis. O detalhe do paciente usa as sessões realmente vinculadas em `appointments`; não inferir número de sessões contratadas se esse campo não existir no plano.
+- `AppointmentModal` passa a configurar cobrança única ou parcelamento de 2x a 60x, com primeiro vencimento. Atendimento não cancelado com valor pode cobrar; sessão de paciente em pacote continua sem cobrança individual.
+- Nova RPC `save_appointment_billing_plan(uuid,text,integer,date)` é a fonte da verdade do parcelamento real. Ela preserva linhas pagas/parciais e recria somente parcelas sem recebimento.
+- `billing_entries.installment_number/installment_count` passam a representar parcelas de pacote OU de atendimento, com vínculo inequívoco por `package_plan_id` ou `appointment_id`.
+- `sync_appointment_billing` não cria cobrança única adicional quando já existe plano explícito do atendimento.
+- Cancelamento: parcela parcial é encerrada no valor já recebido e passa a `paid`; parcela pendente sem recebimento passa a `cancelled`; pagamento integral permanece intacto. A regra foi espelhada no perfil de teste local.
+- `FinancePage` agrega histórico parcelado tanto por pacote quanto por atendimento e o `A receber` mostra cada parcela separadamente.
+- O SQL 12 da v2.0.35 incluído no pacote foi substituído pela revisão final corrigida; para quem já aplicou essa correção, não reexecutar.
+- SQL novo: `SQL/13 - Pacientes em cards e parcelamento por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.36.sql`.
+- Commit sugerido: `Adicionar cards de pacientes e parcelamento por atendimento v2.0.36`.

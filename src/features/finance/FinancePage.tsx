@@ -350,23 +350,38 @@ export function FinancePage({
           .map((entry) => entry.package_plan_id)
           .filter((value): value is string => Boolean(value)),
       );
-      const packageHistory = data.packageBillings.filter((entry) => entry.package_plan_id && packagePlanIds.has(entry.package_plan_id));
-      const standaloneOpen = openEntries.filter((entry) => !entry.package_plan_id);
+      const appointmentPlanIds = new Set(
+        openEntries
+          .filter((entry) => Number(entry.installment_count || 0) > 0)
+          .map((entry) => entry.appointment_id)
+          .filter((value): value is string => Boolean(value)),
+      );
+      const installmentHistory = data.packageBillings.filter((entry) =>
+        Boolean(entry.package_plan_id && packagePlanIds.has(entry.package_plan_id))
+        || Boolean(entry.appointment_id && appointmentPlanIds.has(entry.appointment_id)),
+      );
+      const installmentHistoryIds = new Set(installmentHistory.map((entry) => entry.id));
+      const standaloneOpen = openEntries.filter((entry) => !installmentHistoryIds.has(entry.id));
       const detailById = new Map<string, BillingEntry>();
-      [...packageHistory, ...standaloneOpen].forEach((entry) => detailById.set(entry.id, entry));
+      [...installmentHistory, ...standaloneOpen].forEach((entry) => detailById.set(entry.id, entry));
       const detailEntries = Array.from(detailById.values()).sort((a, b) => (a.due_date ?? a.competence_date).localeCompare(b.due_date ?? b.competence_date));
 
       const totalAmount = detailEntries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
       const paidAmount = detailEntries.reduce((sum, entry) => sum + Number(entry.received_amount || 0), 0);
       const outstandingAmount = openEntries.reduce((sum, entry) => sum + outstanding(entry), 0);
-      const installmentCount = packageHistory.length
-        ? Array.from(packagePlanIds).reduce((sum, planId) => {
-            const planEntries = packageHistory.filter((entry) => entry.package_plan_id === planId);
-            const count = planEntries.reduce((max, entry) => Math.max(max, Number(entry.installment_count || 0)), 0);
-            return sum + count;
+      const installmentPlanKeys = new Set<string>();
+      installmentHistory.forEach((entry) => {
+        if (entry.package_plan_id) installmentPlanKeys.add(`package:${entry.package_plan_id}`);
+        else if (entry.appointment_id) installmentPlanKeys.add(`appointment:${entry.appointment_id}`);
+      });
+      const installmentCount = installmentPlanKeys.size
+        ? Array.from(installmentPlanKeys).reduce((sum, key) => {
+            const [kind, id] = key.split(":");
+            const planEntries = installmentHistory.filter((entry) => kind === "package" ? entry.package_plan_id === id : entry.appointment_id === id);
+            return sum + planEntries.reduce((max, entry) => Math.max(max, Number(entry.installment_count || 0)), 0);
           }, 0)
         : null;
-      const paidInstallments = packageHistory.filter((entry) => outstanding(entry) <= 0 && Number(entry.amount) > 0).length;
+      const paidInstallments = installmentHistory.filter((entry) => outstanding(entry) <= 0 && Number(entry.amount) > 0).length;
       const overdueInstallments = openEntries.filter((entry) => Boolean(entry.due_date && entry.due_date < today) && outstanding(entry) > 0).length;
       const partialInstallments = openEntries.filter((entry) => entry.status === "partial").length;
       const nextDueDate = openEntries
@@ -833,7 +848,7 @@ export function FinancePage({
                   <div className="rounded-xl bg-card/70 p-3"><p className="text-[10px] text-muted-foreground">Valor total</p><p className="mt-1 text-sm font-semibold">{money(group.totalAmount)}</p></div>
                   <div className="rounded-xl bg-card/70 p-3"><p className="text-[10px] text-muted-foreground">Já pago</p><p className="mt-1 text-sm font-semibold text-emerald-700">{money(group.paidAmount)}</p></div>
                   <div className="rounded-xl bg-card/70 p-3"><p className="text-[10px] text-muted-foreground">Ainda falta</p><p className="mt-1 text-sm font-semibold">{money(group.outstandingAmount)}</p></div>
-                  <div className="rounded-xl bg-card/70 p-3"><p className="text-[10px] text-muted-foreground">Parcelamento</p>{group.installmentCount ? <><p className="mt-1 text-sm font-semibold">{group.installmentCount}x</p><p className="mt-1 text-[10px] text-muted-foreground">{group.paidInstallments} parcela(s) paga(s)</p></> : <p className="mt-1 text-sm font-semibold">Não parcelado</p>}</div>
+                  <div className="rounded-xl bg-card/70 p-3"><p className="text-[10px] text-muted-foreground">Parcelamento</p>{group.installmentCount && group.installmentCount > 1 ? <><p className="mt-1 text-sm font-semibold">{group.installmentCount}x</p><p className="mt-1 text-[10px] text-muted-foreground">{group.paidInstallments} parcela(s) paga(s)</p></> : <p className="mt-1 text-sm font-semibold">Não parcelado</p>}</div>
                   <div className="rounded-xl bg-card/70 p-3"><p className="text-[10px] text-muted-foreground">Próximo vencimento</p><p className="mt-1 text-sm font-semibold">{dateLabel(group.nextDueDate)}</p><p className="mt-1 text-[10px] text-muted-foreground">{group.partialInstallments} parcial(is)</p></div>
                 </div>
 

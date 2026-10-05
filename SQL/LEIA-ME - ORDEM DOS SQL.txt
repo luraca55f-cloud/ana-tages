@@ -35,3 +35,14 @@ ANA TAGES v2.0.35 — NOVO:
 
 Objetivo: atendimento ativo com valor entra imediatamente em A receber; cancelado sai da carteira; sessão em pacote continua sem cobrança individual.
 Não execute novamente as pastas antigas apenas por causa desta atualização.
+
+
+ANA TAGES v2.0.36 — NOVO:
+13 - Pacientes em cards e parcelamento por atendimento
+  Execute somente: SQL_ATUALIZACAO_ANA_TAGES_v2.0.36.sql
+
+Pré-requisito: a v2.0.35 corrigida já deve estar aplicada.
+O SQL 12 presente neste pacote é a versão corrigida final para histórico/instalações que ainda não chegaram à v2.0.35; se a v2.0.35 já foi aplicada com Success, NÃO execute o SQL 12 novamente.
+
+Objetivo do SQL 13: permitir cobrança única ou parcelada por atendimento, preservar valores já recebidos e manter cancelamento sem apagar histórico financeiro. A mudança visual de Pacientes em cards não exige SQL.
+Não execute migration inicial, SQL de zerar conta ou pastas antigas por causa desta atualização.

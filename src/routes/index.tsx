@@ -70,7 +70,6 @@ import {
   deletePatient,
   getAppSettings,
   grantClinicalAccess,
-  getAppointmentPayment,
   listAllAppointments,
   listAppointmentPayments,
   listAppointments,
@@ -83,6 +82,7 @@ import {
   openMaterial,
   revokeClinicalAccess,
   saveAppSettings,
+  saveAppointmentBillingPlan,
   savePatientPackagePlan,
   cancelPatientPackagePlan,
   updateAppointment,
@@ -495,7 +495,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.35 • sem gravação no Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.36 • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
@@ -507,7 +507,7 @@ function ConsultorioApp() {
         <main className="mx-auto max-w-[1460px] p-4 sm:p-7">
           {activeModule === "Dashboard" && <DashboardPage patients={patientViews} appointments={appointments} loading={loadingCore} loadError={coreLoadError} openModule={openModule} openRecord={setRecordPatient} onQuickAction={runQuickAction} openFinanceTab={openFinanceTab} />}
           {activeModule === "Agenda" && <AgendaPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} />}
-          {activeModule === "Pacientes" && <PatientsPage patients={patientViews} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
+          {activeModule === "Pacientes" && <PatientsPage patients={patientViews} appointments={appointments} onNew={() => setPatientModal("new")} onEdit={(patient) => setPatientModal(patient)} onRecord={setRecordPatient} onChanged={refreshCore} />}
           {activeModule === "Sessões" && <SessionsPage patients={patients} services={availableServices(settings)} onChanged={refreshCore} initialCreate={pendingQuickAction === "session"} onInitialCreateHandled={() => setPendingQuickAction(null)} />}
           {activeModule === "Financeiro" && <FinancePageV2 initialModal={pendingQuickAction === "expense" ? "expense" : pendingQuickAction === "revenue" ? "revenue" : null} onInitialModalHandled={() => setPendingQuickAction(null)} initialTab={pendingFinanceTab} onInitialTabHandled={() => setPendingFinanceTab(null)} />}
           {activeModule === "Prestação de Serviço" && <ServiceWorkPage />}
@@ -664,19 +664,64 @@ function AgendaPage({ patients, services, onChanged }: { patients: PatientRow[];
   </>;
 }
 
-function PatientsPage({ patients, onNew, onEdit, onRecord, onChanged }: { patients: PatientView[]; onNew: () => void; onEdit: (p: PatientRow) => void; onRecord: (p: PatientView) => void; onChanged: () => Promise<void> }) {
+function PatientsPage({ patients, appointments, onNew, onEdit, onRecord, onChanged }: { patients: PatientView[]; appointments: AppointmentRow[]; onNew: () => void; onEdit: (p: PatientRow) => void; onRecord: (p: PatientView) => void; onChanged: () => Promise<void> }) {
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<PatientView | null>(null);
   const visible = patients.filter((p) => {
     const normalizedQuery = cpfDigits(query);
     return p.full_name.toLowerCase().includes(query.toLowerCase())
       || (p.phone ?? "").includes(query)
       || (normalizedQuery.length > 0 && (p.cpf ?? "").includes(normalizedQuery));
   });
+  const patientAppointments = (patientId: string) => appointments.filter((item) => item.patient_id === patientId);
   return <>
-    <PageHeader title="Pacientes" description="Cadastro administrativo, regras de cobrança e acesso seguro ao prontuário clínico." action={<Button variant="dashboard" onClick={onNew}><UserPlus /> Novo paciente</Button>} />
-    <section className="dashboard-card rounded-2xl p-4 sm:p-5"><div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar paciente..." /></div><div className="mt-5 overflow-x-auto"><table className="w-full min-w-[780px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Paciente</th><th className="px-3 py-3">Última sessão</th><th className="px-3 py-3">Próxima sessão</th><th className="px-3 py-3">Cobrança</th><th className="px-3 py-3">Status</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{visible.map((p) => <tr key={p.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-full bg-accent text-[11px] font-semibold">{p.initials}</span><div><p className="text-[13px] font-medium">{p.full_name}</p><p className="text-[10px] text-muted-foreground">{p.phone || "Sem telefone"}</p></div></div></td><td className="px-3 py-4 text-xs text-muted-foreground">{p.lastSession}</td><td className="px-3 py-4 text-xs">{p.nextSession}</td><td className="px-3 py-4 text-xs">{p.billing_model === "package" ? `Pacote ${p.package_amount ? money(p.package_amount) : ""}${p.package_payment_mode === "installments" && p.package_installments ? ` • ${p.package_installments}x` : " • à vista"}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</td><td className="px-3 py-4"><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></td><td className="px-3 py-4"><div className="flex justify-end gap-1"><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="ghost" size="icon" onClick={() => onEdit(p)}><Pencil /></Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /></Button></div></td></tr>)}</tbody></table>{visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}</div></section>
+    <PageHeader title="Pacientes" description="Cada paciente reúne cadastro, contratação e sessões em um único lugar." action={<Button variant="dashboard" onClick={onNew}><UserPlus /> Novo paciente</Button>} />
+    <section className="dashboard-card rounded-2xl p-4 sm:p-5">
+      <div className="relative"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><input value={query} onChange={(e) => setQuery(e.target.value)} className="h-10 w-full rounded-xl border border-border bg-background/60 pl-10 pr-4 text-sm" placeholder="Buscar paciente..." /></div>
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {visible.map((p) => {
+          const related = patientAppointments(p.id).filter((item) => item.service_kind === "session");
+          const completed = related.filter((item) => item.status === "completed").length;
+          const upcoming = related.filter((item) => ["scheduled", "confirmed"].includes(item.status) && new Date(item.scheduled_at).getTime() >= Date.now()).length;
+          return <article key={p.id} role="button" tabIndex={0} onClick={() => setSelected(p)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelected(p); }} className="group cursor-pointer rounded-2xl border border-border bg-background/50 p-4 transition hover:-translate-y-0.5 hover:bg-card hover:shadow-sm">
+            <div className="flex items-start gap-3">
+              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold">{p.initials}</span>
+              <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{p.full_name}</p><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{p.phone || p.email || "Sem contato informado"}</p></div><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></div></div>
+            </div>
+            <div className="mt-4 rounded-xl bg-card/70 p-3"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Contratação</p><p className="mt-1 text-xs font-medium">{p.billing_model === "package" ? `Pacote / plano ${p.package_amount ? money(p.package_amount) : ""}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</p><p className="mt-1 text-[10px] text-muted-foreground">{p.billing_model === "package" ? p.package_payment_mode === "installments" && p.package_installments ? `${p.package_installments}x • 1º vencimento ${p.package_first_due_date ? dateLabel(p.package_first_due_date) : "não informado"}` : "Pagamento à vista" : "Cobrança vinculada a cada atendimento"}</p></div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Sessões</p><p className="mt-1 text-sm font-semibold">{related.length}</p></div><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Realizadas</p><p className="mt-1 text-sm font-semibold">{completed}</p></div><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Próximas</p><p className="mt-1 text-sm font-semibold">{upcoming}</p></div></div>
+            <div className="mt-4 flex items-center justify-between border-t border-border/70 pt-3"><span className="flex items-center gap-1 text-[10px] font-medium text-primary">Ver sessões e contratação <ChevronRight className="size-3" /></span><div className="flex gap-1" onClick={(event) => event.stopPropagation()}><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="ghost" size="icon" onClick={() => onEdit(p)}><Pencil /></Button><Button variant="ghost" size="icon" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /></Button></div></div>
+          </article>;
+        })}
+      </div>
+      {visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}
+    </section>
     <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Cada abertura exige código TOTP. O conteúdo das evoluções é criptografado no navegador antes de ser armazenado.</p></div></div></section>
+    {selected && <PatientDetailsModal patient={selected} appointments={patientAppointments(selected.id)} onClose={() => setSelected(null)} onEdit={() => { setSelected(null); onEdit(selected); }} onRecord={() => { setSelected(null); onRecord(selected); }} />}
   </>;
+}
+
+function PatientDetailsModal({ patient, appointments, onClose, onEdit, onRecord }: { patient: PatientView; appointments: AppointmentRow[]; onClose: () => void; onEdit: () => void; onRecord: () => void }) {
+  const sessions = appointments.filter((item) => item.service_kind === "session").sort((a, b) => +new Date(b.scheduled_at) - +new Date(a.scheduled_at));
+  const completed = sessions.filter((item) => item.status === "completed").length;
+  const upcoming = sessions.filter((item) => ["scheduled", "confirmed"].includes(item.status) && new Date(item.scheduled_at).getTime() >= Date.now()).length;
+  const noShow = sessions.filter((item) => item.status === "no_show").length;
+  const cancelled = sessions.filter((item) => item.status === "cancelled").length;
+  return <ModalShell onClose={onClose} width="max-w-4xl">
+    <ModalHeader title={patient.full_name} subtitle="Contratação, sessões vinculadas e acesso ao prontuário." onClose={onClose} />
+    <div className="p-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-2xl border border-border bg-background/55 p-4"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Modelo contratado</p><p className="mt-2 text-sm font-semibold">{patient.billing_model === "package" ? "Pacote / plano" : "Por sessão"}</p><p className="mt-1 text-[10px] text-muted-foreground">{patient.billing_model === "package" ? `${patient.package_amount ? money(patient.package_amount) : "Valor não informado"}${patient.package_payment_mode === "installments" && patient.package_installments ? ` • ${patient.package_installments}x` : " • à vista"}` : patient.session_amount ? `${money(patient.session_amount)} por sessão` : "Valor não informado"}</p></div>
+        <MiniFeature icon={<BadgeCheck />} title="Realizadas" text={String(completed)} />
+        <MiniFeature icon={<CalendarDays />} title="Próximas" text={String(upcoming)} />
+        <MiniFeature icon={<ClipboardList />} title="Faltas / canceladas" text={`${noShow} falta(s) • ${cancelled} cancelada(s)`} />
+      </div>
+      <div className="mt-5 flex flex-wrap gap-2"><Button variant="dashboard" size="sm" onClick={onEdit}><Pencil /> Editar paciente</Button><Button variant="quiet" size="sm" onClick={onRecord}><LockKeyhole /> Abrir prontuário</Button></div>
+      <div className="mt-6"><div className="flex items-center justify-between gap-3"><div><h3 className="font-display text-lg">Sessões vinculadas</h3><p className="mt-1 text-[10px] text-muted-foreground">Aqui aparecem as sessões cadastradas para este paciente. O sistema não inventa quantidade contratada: em pacote/plano, são exibidas as sessões efetivamente vinculadas ao paciente.</p></div><span className="rounded-full bg-accent px-2.5 py-1 text-[10px] font-semibold">{sessions.length} sessão(ões)</span></div>
+        <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">{sessions.map((item) => <article key={item.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-background/50 p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="text-xs font-semibold">{dateTimeLabel(item.scheduled_at)} • {appointmentServiceLabel(item)}</p><p className="mt-1 text-[10px] text-muted-foreground">{modalityLabel(item.modality)} • {item.duration_minutes} min • {patient.billing_model === "package" ? "Incluída no pacote/plano" : money(item.amount)}</p></div><StatusBadge status={statusLabel(item.status)} /></article>)}{sessions.length === 0 && <Empty text="Nenhuma sessão vinculada a este paciente." />}</div>
+      </div>
+    </div>
+  </ModalShell>;
 }
 
 function SessionsPage({ patients, services, onChanged, initialCreate = false, onInitialCreateHandled }: { patients: PatientRow[]; services: ServiceCatalogItem[]; onChanged: () => Promise<void>; initialCreate?: boolean; onInitialCreateHandled?: () => void }) {
@@ -719,33 +764,38 @@ function SessionsPage({ patients, services, onChanged, initialCreate = false, on
     .sort((a, b) => +new Date(a.scheduled_at) - +new Date(b.scheduled_at));
   const patientMap = useMemo(() => new Map(patients.map((patient) => [patient.id, patient])), [patients]);
   const paymentMap = useMemo(() => {
-    const map = new Map<string, AppointmentPaymentRow>();
-    payments.forEach((payment) => { if (!map.has(payment.appointment_id)) map.set(payment.appointment_id, payment); });
+    const map = new Map<string, AppointmentPaymentRow[]>();
+    payments.forEach((payment) => {
+      const current = map.get(payment.appointment_id) ?? [];
+      current.push(payment);
+      map.set(payment.appointment_id, current);
+    });
     return map;
   }, [payments]);
   const isPackageSession = (item: AppointmentRow) => item.service_kind === "session" && Boolean(item.patient_id && patientMap.get(item.patient_id)?.billing_model === "package");
-  const pending = items.filter((item) => {
-    const payment = paymentMap.get(item.id);
-    return !isPackageSession(item) && payment && (payment.status === "pending" || payment.status === "partial");
-  });
-  const pendingAmount = pending.reduce((sum, item) => {
-    const payment = paymentMap.get(item.id)!;
-    return sum + Math.max(0, Number(payment.amount) - Number(payment.received_amount || 0));
-  }, 0);
+  const appointmentOutstanding = (item: AppointmentRow) => (paymentMap.get(item.id) ?? []).reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) - Number(payment.received_amount || 0)), 0);
+  const pending = items.filter((item) => !isPackageSession(item) && appointmentOutstanding(item) > 0);
+  const pendingAmount = pending.reduce((sum, item) => sum + appointmentOutstanding(item), 0);
   const paymentState = (item: AppointmentRow) => {
     if (isPackageSession(item)) return { label: "Incluída no pacote", tone: "muted" as const };
-    const payment = paymentMap.get(item.id);
-    if (!payment || item.amount <= 0) return { label: "Sem cobrança", tone: "muted" as const };
-    if (payment.status === "paid") return { label: "Recebido", tone: "ok" as const };
-    if (payment.status === "partial") return { label: "Parcial", tone: "warn" as const };
-    if (payment.status === "cancelled") return { label: "Cancelado", tone: "muted" as const };
+    const rows = paymentMap.get(item.id) ?? [];
+    if (!rows.length || item.amount <= 0) return { label: "Sem cobrança", tone: "muted" as const };
+    const count = rows.reduce((max, payment) => Math.max(max, Number(payment.installment_count || 0)), 0);
+    const open = rows.filter((payment) => payment.status === "pending" || payment.status === "partial");
+    const received = rows.filter((payment) => payment.status === "paid" || Number(payment.received_amount || 0) > 0);
+    if (open.length === 0) return { label: count > 1 ? `${count}x • Recebido` : "Recebido", tone: "ok" as const };
+    if (count > 1) return { label: received.length ? `${count}x • Parcial` : `${count}x • A receber`, tone: "warn" as const };
+    if (open.some((payment) => payment.status === "partial")) return { label: "Parcial", tone: "warn" as const };
     return { label: "A receber", tone: "warn" as const };
   };
   const paymentFilterKey = (item: AppointmentRow) => {
     if (isPackageSession(item)) return "package";
-    const payment = paymentMap.get(item.id);
-    if (!payment || item.amount <= 0) return "none";
-    return payment.status;
+    const rows = paymentMap.get(item.id) ?? [];
+    if (!rows.length || item.amount <= 0) return "none";
+    const open = rows.filter((payment) => payment.status === "pending" || payment.status === "partial");
+    if (!open.length) return "paid";
+    if (open.some((payment) => payment.status === "partial") || rows.some((payment) => payment.status === "paid")) return "partial";
+    return "pending";
   };
   const serviceOptions = Array.from(new Set(items.map((item) => appointmentServiceLabel(item)))).sort((a, b) => a.localeCompare(b, "pt-BR"));
   const filteredItems = items.filter((item) => {
@@ -802,7 +852,7 @@ function SessionsPage({ patients, services, onChanged, initialCreate = false, on
         </div>
         {hasFilters && <div className="mt-2 flex justify-end"><Button size="sm" variant="ghost" onClick={clearFilters}>Limpar filtros</Button></div>}
       </div>
-      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1040px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Atendimento</th><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{filteredItems.map((item) => { const payment = paymentMap.get(item.id); const state = paymentState(item); return <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{isPackageSession(item) ? "Pacote" : money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.tone === "ok" ? "bg-primary/8 text-primary" : state.tone === "warn" ? "bg-secondary/15 text-secondary" : "bg-muted text-muted-foreground"}`}>{state.label}</span></td><td className="px-3 py-4"><div className="flex justify-end gap-2">{payment && (payment.status === "pending" || payment.status === "partial") && !isPackageSession(item) && <Button size="sm" variant="quiet" onClick={() => setEditing(item)}><Check /> Receber</Button>}<Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></div></td></tr>; })}</tbody></table>{filteredItems.length === 0 && !loading && <Empty text={hasFilters ? "Nenhum atendimento corresponde aos filtros." : "Nenhum atendimento encontrado neste período."} />}</div>
+      <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[1040px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Paciente/cliente</th><th className="px-3 py-3">Serviço</th><th className="px-3 py-3">Modalidade</th><th className="px-3 py-3">Valor</th><th className="px-3 py-3">Atendimento</th><th className="px-3 py-3">Pagamento</th><th className="px-3 py-3 text-right">Ações</th></tr></thead><tbody>{filteredItems.map((item) => { const paymentRows = paymentMap.get(item.id) ?? []; const state = paymentState(item); const hasOpenPayment = paymentRows.some((payment) => payment.status === "pending" || payment.status === "partial"); return <tr key={item.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs">{dateTimeLabel(item.scheduled_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{item.patient_name || "—"}</td><td className="px-3 py-4 text-xs">{appointmentServiceLabel(item)}</td><td className="px-3 py-4 text-xs">{modalityLabel(item.modality)}</td><td className="px-3 py-4 text-xs font-medium">{isPackageSession(item) ? "Pacote" : money(item.amount)}</td><td className="px-3 py-4"><StatusBadge status={statusLabel(item.status)} /></td><td className="px-3 py-4"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.tone === "ok" ? "bg-primary/8 text-primary" : state.tone === "warn" ? "bg-secondary/15 text-secondary" : "bg-muted text-muted-foreground"}`}>{state.label}</span></td><td className="px-3 py-4"><div className="flex justify-end gap-2">{hasOpenPayment && !isPackageSession(item) && <Button size="sm" variant="quiet" onClick={() => setEditing(item)}><Check /> Receber</Button>}<Button variant="ghost" size="icon" onClick={() => setEditing(item)}><Pencil /></Button></div></td></tr>; })}</tbody></table>{filteredItems.length === 0 && !loading && <Empty text={hasFilters ? "Nenhum atendimento corresponde aos filtros." : "Nenhum atendimento encontrado neste período."} />}</div>
     </section>
     {editing && <AppointmentModal patients={patients} services={services} appointment={editing === "new" ? null : editing} defaultDate={`${month}-01`} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await reload(); await onChanged(); }} />}
   </>;
@@ -1552,9 +1602,12 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
   const [status, setStatus] = useState<AppointmentStatus>(appointment?.status ?? "scheduled");
   const [serviceId, setServiceId] = useState(initialServiceId);
   const [amount, setAmount] = useState(String(appointment?.amount ?? ""));
+  const [billingMode, setBillingMode] = useState<"single" | "installments">("single");
+  const [installmentCount, setInstallmentCount] = useState(2);
+  const [firstDueDate, setFirstDueDate] = useState(localValue.slice(0, 10));
   const [paymentReceived, setPaymentReceived] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
-  const [currentPayment, setCurrentPayment] = useState<AppointmentPaymentRow | null>(null);
+  const [currentPayments, setCurrentPayments] = useState<AppointmentPaymentRow[]>([]);
   const [notes, setNotes] = useState(appointment?.notes_admin ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1563,19 +1616,44 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
   const selectedPatient = patients.find((item) => item.id === patientId) ?? null;
   const isPackageSession = Boolean(selectedPatient?.billing_model === "package" && selectedService?.kind === "session");
   const numericAmount = isPackageSession ? 0 : Number(amount.replace(",",".")) || 0;
-  const canCharge = !isPackageSession && numericAmount > 0 && ["scheduled", "confirmed", "completed"].includes(status);
-  const paymentLocked = currentPayment?.status === "paid";
+  const canCharge = !isPackageSession && numericAmount > 0 && status !== "cancelled";
+  const effectiveInstallmentCount = billingMode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(installmentCount || 2)));
+  const singlePayment = currentPayments.length === 1 ? currentPayments[0] ?? null : null;
+  const paymentLocked = billingMode === "single" && singlePayment?.status === "paid";
+  const receivedPayments = currentPayments.filter((item) => Number(item.received_amount || 0) > 0 || item.status === "paid" || item.status === "partial");
+  const receivedAllocated = receivedPayments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const remainingSlots = Math.max(0, effectiveInstallmentCount - receivedPayments.length);
+  const remainingToAllocate = Math.max(0, Math.round((numericAmount - receivedAllocated) * 100) / 100);
+  const pendingPreview = canCharge && remainingSlots > 0 && firstDueDate && remainingToAllocate > 0
+    ? packageInstallmentPreview(remainingToAllocate, remainingSlots, addMonthsClamped(firstDueDate, receivedPayments.length))
+    : [];
 
   useEffect(() => {
     let active = true;
-    if (!appointment) { setCurrentPayment(null); setPaymentReceived(false); return; }
-    void getAppointmentPayment(appointment.id).then((payment) => {
+    if (!appointment) {
+      setCurrentPayments([]);
+      setPaymentReceived(false);
+      setBillingMode("single");
+      setInstallmentCount(2);
+      setFirstDueDate(localValue.slice(0, 10));
+      return;
+    }
+    void listAppointmentPayments([appointment.id]).then((payments) => {
       if (!active) return;
-      setCurrentPayment(payment);
-      setPaymentReceived(payment?.status === "paid");
-      if (payment?.payment_method) setPaymentMethod(payment.payment_method);
+      const rows = payments.filter((item) => item.appointment_id === appointment.id && item.status !== "cancelled");
+      setCurrentPayments(rows);
+      const count = rows.reduce((max, item) => Math.max(max, Number(item.installment_count || 0)), 0) || (rows.length > 1 ? rows.length : 1);
+      setBillingMode(count > 1 ? "installments" : "single");
+      setInstallmentCount(Math.max(2, count));
+      const due = rows.map((item) => item.due_date).filter((value): value is string => Boolean(value)).sort()[0];
+      setFirstDueDate(due ?? appointment.scheduled_at.slice(0, 10));
+      const only = rows.length === 1 ? rows[0] : null;
+      setPaymentReceived(only?.status === "paid");
+      if (only?.payment_method) setPaymentMethod(only.payment_method);
     }).catch(() => undefined);
     return () => { active = false; };
+    // localValue é apenas o fallback inicial desta instância do modal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointment]);
 
   const applyPatientSessionAmount = (patient: PatientRow | undefined, service: ServiceCatalogItem | null) => {
@@ -1594,103 +1672,97 @@ function AppointmentModal({ patients, services, appointment, defaultDate, onClos
     const patient = patients.find((item) => item.id === patientId);
     applyPatientSessionAmount(patient, service);
   };
+  const changeWhen = (value: string) => {
+    const oldDate = when.slice(0, 10);
+    setWhen(value);
+    if (!appointment && firstDueDate === oldDate && value.slice(0, 10)) setFirstDueDate(value.slice(0, 10));
+  };
 
   const save = async () => {
-    // Validação local deve dizer qual campo impede o cadastro antes de chamar o Supabase.
     if (!name.trim()) { setError("Informe o paciente / cliente."); return; }
     if (!when) { setError("Informe a data e o horário do atendimento."); return; }
     if (!selectedService) { setError("Selecione um serviço antes de salvar o atendimento."); return; }
-    if (!Number.isInteger(duration) || duration < 10 || duration > 240) {
-      setError("A duração do atendimento deve ficar entre 10 e 240 minutos.");
-      return;
-    }
+    if (!Number.isInteger(duration) || duration < 10 || duration > 240) { setError("A duração do atendimento deve ficar entre 10 e 240 minutos."); return; }
     if (!isPackageSession && amount.trim()) {
       const typedAmount = Number(amount.replace(",", "."));
-      if (!Number.isFinite(typedAmount) || typedAmount < 0 || typedAmount > 1_000_000) {
-        setError("Informe um valor válido entre R$ 0,00 e R$ 1.000.000,00.");
-        return;
-      }
+      if (!Number.isFinite(typedAmount) || typedAmount < 0 || typedAmount > 1_000_000) { setError("Informe um valor válido entre R$ 0,00 e R$ 1.000.000,00."); return; }
+    }
+    if (canCharge) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(firstDueDate)) { setError("Informe a data de vencimento da cobrança."); return; }
+      if (billingMode === "installments" && (effectiveInstallmentCount < 2 || effectiveInstallmentCount > 60)) { setError("O parcelamento deve ter entre 2 e 60 parcelas."); return; }
+      if (receivedPayments.length > effectiveInstallmentCount) { setError("Não é possível reduzir para menos parcelas do que já possuem recebimento."); return; }
+      if (receivedAllocated - numericAmount > 0.001) { setError("O valor do atendimento não pode ser menor que o valor já comprometido em parcelas recebidas."); return; }
     }
 
     const parsed = new Date(when);
     if (Number.isNaN(parsed.getTime())) { setError("A data e o horário informados são inválidos."); return; }
 
-    // Ao cancelar uma sessão de paciente com pacote, o sistema pergunta explicitamente se
-    // o pacote financeiro também deve ser cancelado. Isso evita tanto deixar parcelas de
-    // uma simulação em aberto quanto apagar cobranças legítimas ao cancelar só uma sessão.
     let cancelPackageWithAppointment = false;
     if (appointment && status === "cancelled" && appointment.status !== "cancelled" && selectedPatient?.package_plan_id) {
-      cancelPackageWithAppointment = window.confirm(
-        "Este paciente possui um pacote/plano ativo. Deseja cancelar também o pacote e as parcelas ainda não pagas?\n\nOK = cancelar pacote e parcelas pendentes.\nCancelar = cancelar somente este atendimento.",
-      );
+      cancelPackageWithAppointment = window.confirm("Este paciente possui um pacote/plano ativo. Deseja cancelar também o pacote e as parcelas ainda não pagas?\n\nOK = cancelar pacote e parcelas pendentes.\nCancelar = cancelar somente este atendimento.");
     }
 
     setSaving(true); setError("");
-    let stage: "appointment" | "payment" | "refresh" = "appointment";
+    let stage: "appointment" | "billing" | "payment" | "refresh" = "appointment";
     try {
       const payload = { patient_id:patientId||null, patient_name:name.trim(), scheduled_at:parsed.toISOString(), duration_minutes:duration, modality, status, service_kind:selectedService.kind, service_name:selectedService.name, amount:numericAmount, notes_admin:notes.trim()||null };
       const saved = appointment ? await updateAppointment(appointment.id, payload) : await createAppointment(payload as Omit<AppointmentRow, "id" | "created_at">, requestId);
-      if (appointment && status === "cancelled" && appointment.status !== "cancelled") {
-        await deleteAppointment(saved.id, cancelPackageWithAppointment);
+      if (appointment && status === "cancelled" && appointment.status !== "cancelled") await deleteAppointment(saved.id, cancelPackageWithAppointment);
+      if (canCharge) {
+        stage = "billing";
+        await saveAppointmentBillingPlan({ appointment_id: saved.id, payment_mode: billingMode, installment_count: effectiveInstallmentCount, first_due_date: firstDueDate });
       }
       stage = "payment";
-      if (paymentReceived && canCharge && currentPayment?.status !== "paid") await markAppointmentPaid(saved.id, paymentMethod);
+      if (billingMode === "single" && paymentReceived && canCharge && singlePayment?.status !== "paid") await markAppointmentPaid(saved.id, paymentMethod);
       stage = "refresh";
       await onSaved();
     } catch (saveError) {
       console.error("Falha ao salvar atendimento", { stage, error: saveError });
-      if (stage === "appointment") {
-        setError(appointmentSaveErrorMessage(saveError));
-      } else if (stage === "payment") {
-        setError(`O atendimento foi salvo, mas o recebimento não pôde ser registrado. ${appointmentSaveErrorMessage(saveError)}`);
-      } else {
-        setError("O atendimento foi salvo, mas a tela não conseguiu atualizar os dados. Feche esta janela e atualize a página.");
-      }
-    }
-    finally { setSaving(false); }
+      const message = saveError instanceof Error ? saveError.message : "";
+      if (stage === "appointment") setError(appointmentSaveErrorMessage(saveError));
+      else if (stage === "billing") setError(`O atendimento foi salvo, mas o parcelamento não pôde ser atualizado. ${message || appointmentSaveErrorMessage(saveError)}`);
+      else if (stage === "payment") setError(`O atendimento foi salvo, mas o recebimento não pôde ser registrado. ${message || appointmentSaveErrorMessage(saveError)}`);
+      else setError("O atendimento foi salvo, mas a tela não conseguiu atualizar os dados. Feche esta janela e atualize a página.");
+    } finally { setSaving(false); }
   };
 
-  return <ModalShell onClose={onClose} width="max-w-2xl">
-    <ModalHeader title={appointment ? "Editar atendimento" : "Novo atendimento"} subtitle="Agenda, sessão e pagamento ficam vinculados no mesmo atendimento." onClose={onClose} />
+  const badgeText = isPackageSession ? "Incluído no pacote" : !canCharge ? "Sem cobrança" : billingMode === "installments" ? `${effectiveInstallmentCount}x • A receber` : paymentReceived || paymentLocked ? "Recebido" : singlePayment?.status === "partial" ? "Parcial" : "A receber";
+
+  return <ModalShell onClose={onClose} width="max-w-3xl">
+    <ModalHeader title={appointment ? "Editar atendimento" : "Novo atendimento"} subtitle="Agenda, sessão e cobrança ficam vinculados no mesmo atendimento." onClose={onClose} />
     <div className="grid gap-4 p-5 sm:grid-cols-2">
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
       <FieldEdit label="Paciente / cliente" value={name} onChange={setName} />
-      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>setWhen(e.target.value)} className="input-finance" /></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>changeWhen(e.target.value)} className="input-finance" /></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={modality} onChange={(e)=>setModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do atendimento</span><select value={status} onChange={(e)=>setStatus(e.target.value as AppointmentStatus)} className="input-finance"><option value="scheduled">Agendada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="no_show">Falta</option><option value="cancelled">Cancelada</option></select></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={serviceId} onChange={(e)=>selectService(e.target.value)} className="input-finance" disabled={serviceOptions.length === 0}>{serviceOptions.length === 0 ? <option value="">Cadastre um serviço nas Configurações</option> : serviceOptions.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
-      {isPackageSession ? <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="Incluído no pacote" disabled className="input-finance opacity-70" /></label> : <FieldEdit label="Valor" value={amount} onChange={setAmount} />}
+      {isPackageSession ? <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="Incluído no pacote" disabled className="input-finance opacity-70" /></label> : <FieldEdit label="Valor total" value={amount} onChange={setAmount} />}
 
       <div className="rounded-2xl border border-border bg-accent/30 p-4 sm:col-span-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold">Pagamento desta sessão</p>
-            <p className="mt-1 text-[10px] leading-4 text-muted-foreground">Defina se este atendimento ainda está a receber ou se o valor já foi recebido.</p>
-          </div>
-          <span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${isPackageSession || !canCharge ? "bg-muted text-muted-foreground" : paymentReceived || paymentLocked ? "bg-primary/10 text-primary" : "bg-secondary/15 text-secondary"}`}>
-            {isPackageSession ? "Incluído no pacote" : !canCharge ? "Sem cobrança" : paymentReceived || paymentLocked ? "Recebido" : currentPayment?.status === "partial" ? "Parcial" : "A receber"}
-          </span>
-        </div>
-        <label className="mt-3 block"><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do pagamento</span>
-          <select className="input-finance" value={isPackageSession ? "package" : !canCharge ? "none" : paymentLocked ? "paid" : paymentReceived ? "paid" : currentPayment?.status === "partial" ? "partial" : "pending"} disabled={isPackageSession || !canCharge || paymentLocked} onChange={(e)=>setPaymentReceived(e.target.value === "paid")}>
-            {isPackageSession ? <option value="package">Incluído no pacote</option> : !canCharge ? <option value="none">Sem cobrança</option> : <><option value="pending">A receber</option>{currentPayment?.status === "partial" && <option value="partial">Parcial</option>}<option value="paid">Recebido</option></>}
-          </select>
-        </label>
-        {paymentReceived && canCharge && !paymentLocked && <label className="mt-3 block"><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select className="input-finance" value={paymentMethod} onChange={(e)=>setPaymentMethod(e.target.value as PaymentMethod)}>{Object.entries(paymentMethodLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}
-        <p className="mt-2 text-[10px] leading-4 text-muted-foreground">{isPackageSession ? "Esta sessão está coberta pelo pacote do paciente e não gera cobrança individual." : paymentLocked ? "Pagamento já registrado no Financeiro." : paymentReceived ? "Ao salvar, o valor será registrado como recebido no Financeiro." : currentPayment?.status === "partial" ? `Pagamento parcial registrado. Falta receber ${money(Math.max(0, Number(currentPayment.amount) - Number(currentPayment.received_amount || 0)))}.` : canCharge ? `O valor de ${money(numericAmount)} ficará na carteira a receber até a baixa.` : "Informe um valor e mantenha o atendimento ativo para gerar a cobrança."}</p>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold">Cobrança deste atendimento</p><p className="mt-1 text-[10px] leading-4 text-muted-foreground">Defina se o valor será cobrado de uma vez ou dividido em parcelas.</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${isPackageSession || !canCharge ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"}`}>{badgeText}</span></div>
+
+        {canCharge && <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de cobrança</span><select className="input-finance" value={billingMode} onChange={(e)=>{ const next=e.target.value as "single"|"installments"; setBillingMode(next); if(next === "installments") setPaymentReceived(false); }}><option value="single">Cobrança única</option><option value="installments">Dividir cobrança</option></select></label>
+          {billingMode === "installments" && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Número de parcelas</span><input type="number" min={2} max={60} value={installmentCount} onChange={(e)=>setInstallmentCount(Number(e.target.value))} className="input-finance" /></label>}
+          <label><span className="mb-1.5 block text-[10px] text-muted-foreground">{billingMode === "single" ? "Vencimento" : receivedPayments.length ? "Vencimento-base do parcelamento" : "Vencimento da 1ª parcela"}</span><input type="date" value={firstDueDate} onChange={(e)=>setFirstDueDate(e.target.value)} className="input-finance" /></label>
+          {billingMode === "single" && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do pagamento</span><select className="input-finance" value={paymentLocked ? "paid" : paymentReceived ? "paid" : singlePayment?.status === "partial" ? "partial" : "pending"} disabled={paymentLocked} onChange={(e)=>setPaymentReceived(e.target.value === "paid")}><option value="pending">A receber</option>{singlePayment?.status === "partial" && <option value="partial">Parcial</option>}<option value="paid">Recebido</option></select></label>}
+          {billingMode === "single" && paymentReceived && !paymentLocked && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select className="input-finance" value={paymentMethod} onChange={(e)=>setPaymentMethod(e.target.value as PaymentMethod)}>{Object.entries(paymentMethodLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}
+        </div>}
+
+        {canCharge && billingMode === "installments" && <div className="mt-4 rounded-xl border border-border/70 bg-background/55 p-3"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Prévia do parcelamento</p>{receivedPayments.length > 0 && <p className="mt-2 text-[10px] text-muted-foreground">{receivedPayments.length} parcela(s) com recebimento serão preservadas. O sistema reorganiza somente o saldo ainda não recebido.</p>}<div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">{receivedPayments.map((item,index)=><div key={item.id} className="flex items-center justify-between gap-3 rounded-lg bg-card/80 px-3 py-2 text-xs"><span>Parcela preservada {index+1}/{effectiveInstallmentCount} • {item.due_date ? dateLabel(item.due_date) : "sem vencimento"}</span><strong>{money(Number(item.amount))}</strong></div>)}{pendingPreview.map((item,index)=><div key={`${item.dueDate}-${index}`} className="flex items-center justify-between gap-3 rounded-lg bg-card/80 px-3 py-2 text-xs"><span>Parcela {receivedPayments.length + index + 1}/{effectiveInstallmentCount} • {dateLabel(item.dueDate)}</span><strong>{money(item.amount)}</strong></div>)}{pendingPreview.length === 0 && receivedPayments.length === 0 && <p className="text-[10px] text-muted-foreground">Informe valor, quantidade de parcelas e primeiro vencimento.</p>}</div></div>}
+
+        <p className="mt-3 text-[10px] leading-4 text-muted-foreground">{isPackageSession ? "Esta sessão está coberta pelo pacote do paciente e não gera cobrança individual." : !canCharge ? "Informe um valor e mantenha o atendimento ativo para gerar cobrança." : billingMode === "installments" ? "Cada parcela será criada separadamente em A receber. A baixa de cada parcela é feita no Financeiro; pagamentos já registrados não são apagados ao editar ou cancelar." : paymentLocked ? "Pagamento já registrado no Financeiro." : paymentReceived ? "Ao salvar, a cobrança única será registrada como recebida." : `O valor de ${money(numericAmount)} ficará em A receber até a baixa.`}</p>
       </div>
 
       <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>
       {error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}
       <div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{appointment ? <Button variant="ghost" className="text-destructive" onClick={async()=>{
-        if (!confirm("Cancelar este atendimento? O histórico será preservado.")) return;
-        const cancelPackage = Boolean(selectedPatient?.package_plan_id) && confirm(
-          "Este paciente possui um pacote/plano ativo. Deseja cancelar também o pacote e as parcelas ainda não pagas?\n\nOK = cancelar pacote e parcelas pendentes.\nCancelar = manter o pacote e cancelar somente o atendimento.",
-        );
+        if (!confirm("Cancelar este atendimento? O histórico será preservado e apenas cobranças ainda não pagas serão canceladas.")) return;
+        const cancelPackage = Boolean(selectedPatient?.package_plan_id) && confirm("Este paciente possui um pacote/plano ativo. Deseja cancelar também o pacote e as parcelas ainda não pagas?\n\nOK = cancelar pacote e parcelas pendentes.\nCancelar = manter o pacote e cancelar somente o atendimento.");
         setError("");
-        try { await deleteAppointment(appointment.id, cancelPackage); await onSaved(); }
-        catch { setError("Não foi possível cancelar o atendimento e atualizar o financeiro."); }
+        try { await deleteAppointment(appointment.id, cancelPackage); await onSaved(); } catch { setError("Não foi possível cancelar o atendimento e atualizar o financeiro."); }
       }}><Trash2 /> Cancelar atendimento</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || !when || !selectedService} onClick={() => void save()}>{saving?"Salvando...":"Salvar"}</Button></div></div>
     </div>
   </ModalShell>;

@@ -253,3 +253,27 @@ Não há SQL nesta etapa. Consulte `TEST_PROFILE_SETUP.md`.
 - Métricas: tamanho do banco, Storage, arquivos, usuários, usuários ativos no mês, requisições API e disco provisionado.
 - Dados de teste continuam no navegador e não são gravados no Supabase.
 - SQL: NÃO.
+
+
+## v2.0.34 — sincronização de secrets de runtime
+
+- O pipeline de build sincroniza os secrets cadastrados no Cloudflare Builds para o runtime do Worker antes do deploy.
+- Nenhum secret é gravado no Git.
+- SQL: NÃO.
+
+## v2.0.35 — cobrança imediata por atendimento
+
+- Atendimento com valor e não cancelado entra imediatamente em `A receber`; sessão coberta por pacote continua sem cobrança individual.
+- Cancelamentos preservam pagamentos já registrados e retiram somente o saldo ainda pendente.
+- O SQL 12 incluído neste pacote é a revisão corrigida para execução segura no SQL Editor.
+
+## v2.0.36 — Pacientes em cards e parcelamento por atendimento
+
+- **Pacientes** passa a usar cards clicáveis. Cada card resume contratação e sessões vinculadas; ao abrir o paciente, a aplicação mostra cadastro, sessões realizadas/próximas, modalidade, status e vínculo com pacote.
+- A aplicação mostra apenas sessões realmente vinculadas ao paciente; não inventa quantidade contratada quando esse dado não existe no cadastro do pacote.
+- **Editar atendimento** permite `Cobrança única` ou `Dividir cobrança`, de 2x a 60x, com primeiro vencimento configurável.
+- Cada parcela do atendimento aparece separadamente em **Financeiro > A receber** e pode ser baixada individualmente.
+- Ao editar ou cancelar, pagamentos já recebidos/parciais são preservados; somente saldos ainda não recebidos podem ser reorganizados/cancelados.
+- Sessão incluída em pacote não ganha cobrança individual.
+- O mesmo comportamento existe no perfil real da Ana e no perfil local de homologação.
+- SQL incremental: `SQL/13 - Pacientes em cards e parcelamento por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.36.sql`.

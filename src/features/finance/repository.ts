@@ -57,7 +57,7 @@ export async function loadFinanceBundle(month: string, includeReceivableDetails 
   const ensureFixed = await supabase.rpc("ensure_fixed_expenses", { p_month: start });
   if (ensureFixed.error) throw ensureFixed.error;
 
-  const billingFields = "id,patient_id,source_type,client_name,description,competence_date,issued_at,due_date,amount,status,received_amount,received_at,payment_method,package_plan_id,installment_number,installment_count";
+  const billingFields = "id,patient_id,appointment_id,source_type,client_name,description,competence_date,issued_at,due_date,amount,status,received_amount,received_at,payment_method,package_plan_id,installment_number,installment_count";
   const [billedResult, receivedResult, receivablesResult, expensesResult, patientsResult, packagePlansResult] = await Promise.all([
     supabase.from("billing_entries").select(billingFields).gte("competence_date", start).lt("competence_date", endExclusive).neq("status", "cancelled").order("competence_date", { ascending: false }).limit(MAX_ROWS),
     supabase.from("billing_entries").select(billingFields).gte("received_at", start).lt("received_at", endExclusive).gt("received_amount", 0).order("received_at", { ascending: false }).limit(MAX_ROWS),
@@ -90,7 +90,7 @@ export async function loadFinanceBundle(month: string, includeReceivableDetails 
   let patientDirectory: Array<{ id: string; full_name: string; cpf: string | null }> = [];
   if (includeReceivableDetails) {
     const [packageBillingsResult, patientDirectoryResult] = await Promise.all([
-      supabase.from("billing_entries").select(billingFields).not("package_plan_id", "is", null).neq("status", "cancelled").order("due_date", { ascending: true }).limit(MAX_ROWS),
+      supabase.from("billing_entries").select(billingFields).not("installment_count", "is", null).neq("status", "cancelled").order("due_date", { ascending: true }).limit(MAX_ROWS),
       supabase.from("patients").select("id,full_name,cpf").order("full_name", { ascending: true }).limit(MAX_ROWS),
     ]);
     const detailError = packageBillingsResult.error ?? patientDirectoryResult.error;

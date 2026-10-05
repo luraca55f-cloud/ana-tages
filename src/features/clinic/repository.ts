@@ -21,6 +21,7 @@ import {
   testMarkAppointmentPaid,
   testOpenMaterial,
   testSaveAppSettings,
+  testSaveAppointmentBillingPlan,
   testSavePatientPackagePlan,
   testUpdateAppointment,
   testUpdatePatient,
@@ -266,9 +267,10 @@ export async function listAppointmentPayments(appointmentIds: string[]) {
     const ids = uniqueIds.slice(index, index + chunkSize);
     const { data, error } = await client
       .from("billing_entries")
-      .select("id,appointment_id,status,amount,received_amount,received_at,payment_method")
+      .select("id,appointment_id,status,amount,received_amount,received_at,payment_method,due_date,installment_number,installment_count")
       .in("appointment_id", ids)
-      .order("created_at", { ascending: false });
+      .neq("status", "cancelled")
+      .order("due_date", { ascending: true });
     if (error) throw error;
     rows.push(...((data ?? []).filter((item) => item.appointment_id) as AppointmentPaymentRow[]));
   }
@@ -282,13 +284,33 @@ export async function getAppointmentPayment(appointmentId: string) {
   if (ensure.error) throw ensure.error;
   const { data, error } = await client
     .from("billing_entries")
-    .select("id,appointment_id,status,amount,received_amount,received_at,payment_method")
+    .select("id,appointment_id,status,amount,received_amount,received_at,payment_method,due_date,installment_number,installment_count")
     .eq("appointment_id", appointmentId)
-    .order("created_at", { ascending: false })
+    .neq("status", "cancelled")
+    .order("due_date", { ascending: true })
     .limit(1)
     .maybeSingle();
   if (error) throw error;
   return (data ?? null) as AppointmentPaymentRow | null;
+}
+
+export async function saveAppointmentBillingPlan(input: {
+  appointment_id: string;
+  payment_mode: "single" | "installments";
+  installment_count: number;
+  first_due_date: string;
+}) {
+  if (isTestMode()) return testSaveAppointmentBillingPlan(input);
+  const client = requireSupabase();
+  const count = input.payment_mode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(input.installment_count)));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.first_due_date)) throw new Error("Informe o primeiro vencimento.");
+  const { error } = await client.rpc("save_appointment_billing_plan", {
+    p_appointment_id: input.appointment_id,
+    p_payment_mode: input.payment_mode,
+    p_installment_count: count,
+    p_first_due_date: input.first_due_date,
+  });
+  if (error) throw error;
 }
 
 export async function markAppointmentPaid(appointmentId: string, paymentMethod: "pix" | "bank_transfer" | "cash" | "credit_card" | "debit_card" | "other") {

@@ -139,3 +139,21 @@ O token do Supabase fica somente no Worker. O perfil de teste continua sem grava
 ## v2.0.34 — Builds -> runtime secrets
 
 O pipeline sincroniza automaticamente os secrets de runtime a partir dos Build Variables/Secrets antes de `wrangler deploy`. Não é necessário cadastrar manualmente os cinco bindings de runtime no painel. `keep_vars: true` continua ativo para preservar bindings existentes.
+
+
+## v2.0.35 — cobrança imediata por atendimento
+
+O SQL 12 deste pacote já contém a correção final para o problema `owner_id inválido` observado no SQL Editor. Em banco onde a correção v2.0.35 já foi aplicada com sucesso, **não execute o SQL 12 novamente**.
+
+## v2.0.36 — cards de pacientes + parcelamento de atendimento
+
+Para atualizar uma instalação que já está na v2.0.35 corrigida:
+
+1. No Supabase SQL Editor, execute **somente**:
+   `SQL/13 - Pacientes em cards e parcelamento por atendimento/SQL_ATUALIZACAO_ANA_TAGES_v2.0.36.sql`
+2. Espere `Success`. Não execute migration inicial, SQL de zerar conta nem pastas antigas.
+3. Substitua os arquivos do repositório pela v2.0.36, preservando `.git`.
+4. Commit sugerido: `Adicionar cards de pacientes e parcelamento por atendimento v2.0.36`.
+5. `Push origin` e aguarde o deployment do Cloudflare ficar `Success`.
+
+O SQL 13 é incremental: não zera pacientes, sessões, cobranças, pacotes ou pagamentos. Pagamentos já registrados são preservados quando um atendimento é reconfigurado ou cancelado.
