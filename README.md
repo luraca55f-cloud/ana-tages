@@ -285,3 +285,16 @@ Na visão detalhada de cada paciente existe agora o botão **Nova sessão**. Ele
 - Paciente com pacote/plano: a sessão continua sem cobrança individual.
 - Após salvar, a nova sessão aparece na lista de sessões vinculadas do paciente.
 - SQL novo: **não**.
+
+
+## v2.0.38 — Biblioteca simples de materiais
+- O módulo **Materiais** foi simplificado para funcionar como biblioteca de modelos e recursos do consultório.
+- Categorias sugeridas: Anamnese, Anamnese infantil, Mapa mental e Jogos de raciocínio; a opção **Outro** permite cadastrar novos tipos.
+- Cada material é salvo com nome, tipo, observação opcional e arquivo privado.
+- Busca e filtros por tipo facilitam localizar os materiais já cadastrados.
+- Tipos de arquivo mantidos por segurança: PDF, PNG, JPG/JPEG e WEBP, até 10 MB no perfil real.
+- SQL novo: **não**.
+
+## v2.0.40
+
+Ajustes administrativos solicitados pela operação do consultório: lançamentos retroativos, edição/exclusão de receitas manuais e despesas, ações explícitas para editar/arquivar pacientes e edição de sessões pelo próprio paciente. Cobranças automáticas continuam sendo alteradas pela origem (atendimento/pacote) para evitar inconsistência financeira.

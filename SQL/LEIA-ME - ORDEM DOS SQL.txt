@@ -46,3 +46,6 @@ O SQL 12 presente neste pacote é a versão corrigida final para histórico/inst
 
 Objetivo do SQL 13: permitir cobrança única ou parcelada por atendimento, preservar valores já recebidos e manter cancelamento sem apagar histórico financeiro. A mudança visual de Pacientes em cards não exige SQL.
 Não execute migration inicial, SQL de zerar conta ou pastas antigas por causa desta atualização.
+
+14) v2.0.40 — edição administrativa e financeiro editável
+Executar: SQL/14 - Edicao administrativa e financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.40.sql

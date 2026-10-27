@@ -372,3 +372,26 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Ao salvar, a tela de pacientes é atualizada e a nova sessão passa a aparecer em `Sessões vinculadas`.
 - SQL novo: NÃO.
 - Commit sugerido: `Adicionar nova sessão pelo card do paciente v2.0.37`.
+
+
+## v2.0.38 — biblioteca simples de materiais
+- `MaterialsPage` continua usando a tabela `materials` e o bucket privado existentes; não foi criada nova estrutura de banco.
+- A interface agora apresenta o módulo como uma biblioteca de modelos e recursos, com categorias sugeridas e filtro por tipo.
+- Categorias iniciais: `Anamnese`, `Anamnese infantil`, `Mapa mental`, `Jogos de raciocínio`; `Outro` permite nomear uma categoria adicional.
+- `MaterialModal` pede arquivo, nome do material, tipo e observação opcional.
+- Não ampliar tipos de upload sem revisar `detectSafeMime`; a v2.0.38 mantém PDF/PNG/JPEG/WEBP.
+- SQL novo: NÃO.
+- Commit sugerido: `Organizar biblioteca de materiais do consultório v2.0.38`.
+
+## Atualização v2.0.40 — edição administrativa e financeiro editável
+
+- Base funcional: v2.0.38. Esta atualização não incorpora alterações abandonadas de autenticação.
+- Financeiro: ao selecionar um mês anterior, `Nova receita` e `Nova despesa` passam a abrir com uma data daquele mês como padrão; o usuário ainda pode escolher qualquer data manualmente.
+- Receitas manuais: agora podem ser editadas e excluídas nas abas Faturado, Recebido e A receber. A edição preserva o recebimento existente e bloqueia redução do faturado abaixo do valor já recebido.
+- Cobranças vinculadas: sessão e pacote não são alterados diretamente em `billing_entries`. A ação leva o usuário à origem correta (`Editar atendimento` ou `Editar pacote`) para preservar sincronização e histórico.
+- Recebimentos: continuam independentes do faturamento; podem ser editados ou desfeitos sem apagar a cobrança. Para receita manual, existe também `Excluir lançamento`, com confirmação explícita.
+- Despesas: criação/edição mostra erro real devolvido pelo backend e deixa claro que competências de meses anteriores são aceitas. Ações `Editar` e `Excluir` permanecem nas telas financeiras.
+- Pacientes: ações de `Editar` e `Arquivar` ficaram explícitas nos cards e no detalhe do paciente. Arquivar preserva prontuário e histórico financeiro.
+- Sessões: cada sessão no detalhe do paciente ganhou `Editar sessão`; a tabela de Sessões também usa botão textual de edição.
+- SQL incremental: `SQL/14 - Edicao administrativa e financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.40.sql`.
+- O SQL adiciona apenas as RPCs `update_manual_revenue` e `delete_manual_revenue`; não altera dados existentes e não deve ser substituído por migrations antigas.

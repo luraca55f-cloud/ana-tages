@@ -702,6 +702,34 @@ export function testCreateRevenue(input: { source_type: BillingEntry["source_typ
   writeTestDb(db);
 }
 
+export function testUpdateManualRevenue(input: { id: string; source_type: BillingEntry["source_type"]; client_name: string; description: string; competence_date: string; issued_at: string; due_date: string | null; amount: number }) {
+  const db = readTestDb();
+  const row = db.billings.find((b) => b.id === input.id);
+  if (!row) throw new Error("Receita não encontrada");
+  if (row.appointment_id || row.package_plan_id || row.patient_id) throw new Error("Este lançamento é vinculado e deve ser alterado na origem.");
+  const nextAmount = safeMoney(input.amount);
+  if (Number(row.received_amount || 0) > nextAmount) throw new Error("O valor não pode ser menor que o já recebido.");
+  row.source_type = input.source_type;
+  row.client_name = input.client_name.trim();
+  row.description = input.description.trim();
+  row.competence_date = input.competence_date;
+  row.issued_at = input.issued_at;
+  row.due_date = input.due_date;
+  row.amount = nextAmount;
+  const received = Number(row.received_amount || 0);
+  row.status = received <= 0 ? "pending" : received >= nextAmount ? "paid" : "partial";
+  writeTestDb(db);
+}
+
+export function testDeleteManualRevenue(id: string) {
+  const db = readTestDb();
+  const row = db.billings.find((b) => b.id === id);
+  if (!row) throw new Error("Receita não encontrada");
+  if (row.appointment_id || row.package_plan_id || row.patient_id) throw new Error("Este lançamento é vinculado e deve ser alterado na origem.");
+  db.billings = db.billings.filter((b) => b.id !== id);
+  writeTestDb(db);
+}
+
 export function testCreateExpense(input: { category: string; description: string; competence_date: string; due_date: string | null; amount: number; recurrence: "fixed" | "variable"; status: "pending" | "paid" }) {
   const db = readTestDb();
   db.expenses.unshift({ id: uuid(), category: input.category, description: input.description.trim(), competence_date: input.competence_date, due_date: input.due_date, amount: safeMoney(input.amount), recurrence: input.recurrence, status: input.status, paid_at: input.status === "paid" ? input.competence_date : null, fixed_rule_id: null });

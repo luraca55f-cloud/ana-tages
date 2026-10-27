@@ -1,10 +1,12 @@
-ANA TAGES v2.0.37 — relatório de validação
+ANA TAGES v2.0.40 — RELATÓRIO DE VALIDAÇÃO
 
-- Versão do pacote: 2.0.37.
-- Alteração: botão Nova sessão dentro da visão detalhada do paciente.
-- Paciente é pré-selecionado no modal de atendimento.
-- Serviço de sessão é priorizado para o fluxo iniciado pelo paciente.
-- Regras atuais de pacote, cobrança única e parcelamento foram reaproveitadas sem alteração de banco.
-- SQL novo: NÃO.
-- `npm run verify:project`: OK — 29 arquivos de fonte verificados; imports locais e dependências conferidos.
-- Typecheck/build local completo: não executado porque as dependências do projeto não estão instaladas no ambiente de empacotamento; a validação final ocorrerá no pipeline do Cloudflare.
+Base utilizada: v2.0.38-materiais.
+
+Validações executadas:
+- scripts/verify-project.mjs: OK — 29 arquivos de fonte verificados; imports locais e dependências conferidos.
+- Parser TypeScript/TSX 5.8.3: OK — 28 arquivos TS/TSX analisados, 0 erros de sintaxe.
+- Revisão das novas RPCs SQL: update_manual_revenue e delete_manual_revenue limitadas a lançamentos manuais do usuário autenticado.
+- Fluxos vinculados a atendimento/pacote continuam sendo editados pela origem, evitando dessincronização financeira.
+
+Limitação desta validação local:
+- O build Vite/typecheck completo não foi executado porque a instalação das dependências não concluiu dentro do limite do ambiente. O pipeline do Cloudflare continuará fazendo a validação final de build no deployment.

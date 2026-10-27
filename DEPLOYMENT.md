@@ -163,3 +163,17 @@ O SQL 13 é incremental: não zera pacientes, sessões, cobranças, pacotes ou p
 2. Substitua os arquivos do repositório pela v2.0.37, preservando `.git`.
 3. Commit sugerido: `Adicionar nova sessão pelo card do paciente v2.0.37`.
 4. Faça `Push origin` e aguarde o deployment do Cloudflare ficar `Success`.
+
+
+## v2.0.38 — biblioteca de materiais
+1. SQL a executar: **nenhum**.
+2. Substitua os arquivos do repositório pela v2.0.38, preservando `.git`.
+3. Commit sugerido: `Organizar biblioteca de materiais do consultório v2.0.38`.
+4. Faça `Push origin` e aguarde o deployment do Cloudflare ficar `Success`.
+
+## Atualização v2.0.40
+
+1. No Supabase SQL Editor, executar somente `SQL_ATUALIZACAO_ANA_TAGES_v2.0.40.sql` da pasta `SQL/14 - Edicao administrativa e financeiro`.
+2. Subir os arquivos da v2.0.40 para o GitHub preservando `.git`.
+3. Commit sugerido: `Adicionar edicao administrativa e financeiro editavel v2.0.40`.
+4. Fazer `Push origin` e aguardar o deployment do Cloudflare ficar `Success`.

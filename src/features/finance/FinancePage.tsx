@@ -24,7 +24,7 @@ import { getAppSettings } from "../clinic/repository";
 import type { AppSettingsRow } from "../clinic/types";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { paymentMethodLabels, printCollectionNotice, printFinancialSummary, printPaymentReceipt } from "./documents";
-import { createExpense, createRevenue, deleteExpense, deleteRevenueReceipt, loadFinanceBundle, markExpensePaid, updateExpense, updatePatientBilling, updateRevenueReceipt } from "./repository";
+import { createExpense, createRevenue, deleteExpense, deleteManualRevenue, deleteRevenueReceipt, loadFinanceBundle, markExpensePaid, updateExpense, updateManualRevenue, updatePatientBilling, updateRevenueReceipt } from "./repository";
 import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, PatientIdentity, PaymentMethod, RevenueSource } from "./types";
 
 const sourceLabels: Record<RevenueSource, string> = {
@@ -58,6 +58,21 @@ function isoToday() {
 
 function currentMonth() {
   return isoToday().slice(0, 7);
+}
+
+function defaultDateForMonth(month: string) {
+  if (!/^\d{4}-\d{2}$/.test(month)) return isoToday();
+  if (month === currentMonth()) return isoToday();
+  const [yearText = "1970", monthText = "01"] = month.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  const todayDay = new Date().getDate();
+  const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+  return `${yearText}-${monthText}-${String(Math.min(todayDay, lastDay)).padStart(2, "0")}`;
+}
+
+function isManualRevenue(entry: BillingEntry) {
+  return !entry.appointment_id && !entry.package_plan_id && !entry.patient_id;
 }
 
 function previousMonth(month: string) {
@@ -249,11 +264,15 @@ export function FinancePage({
   onInitialModalHandled,
   initialTab = null,
   onInitialTabHandled,
+  onEditAppointment,
+  refreshKey = 0,
 }: {
   initialModal?: "revenue" | "expense" | null;
   onInitialModalHandled?: () => void;
   initialTab?: FinanceTab | null;
   onInitialTabHandled?: () => void;
+  onEditAppointment?: (appointmentId: string) => void | Promise<void>;
+  refreshKey?: number;
 }) {
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState<FinanceBundle>(emptyBundle);
@@ -262,6 +281,7 @@ export function FinancePage({
   const [error, setError] = useState("");
   const [modal, setModal] = useState<"revenue" | "expense" | null>(null);
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null);
+  const [editingRevenue, setEditingRevenue] = useState<BillingEntry | null>(null);
   const [editingReceipt, setEditingReceipt] = useState<BillingEntry | null>(null);
   const [editingPatient, setEditingPatient] = useState<PatientBilling | null>(null);
   const [tab, setTab] = useState<FinanceTab>("overview");
@@ -274,6 +294,7 @@ export function FinancePage({
   useEffect(() => {
     if (!initialModal) return;
     setEditingExpense(null);
+    setEditingRevenue(null);
     setModal(initialModal);
     onInitialModalHandled?.();
   }, [initialModal, onInitialModalHandled]);
@@ -303,7 +324,7 @@ export function FinancePage({
   useEffect(() => {
     if (isSupabaseConfigured) void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month]);
+  }, [month, refreshKey]);
 
   const summary = useMemo(() => {
     const billed = data.billed.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -478,20 +499,79 @@ export function FinancePage({
 
   const saveRevenue = async (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, clientRequestId: string) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
-    await createRevenue({
-      source_type: entry.source_type,
-      client_name: entry.client_name,
-      description: entry.description,
-      competence_date: entry.competence_date,
-      issued_at: entry.issued_at,
-      due_date: entry.due_date,
-      amount: entry.amount,
-      status: entry.status === "paid" ? "paid" : "pending",
-      payment_method: entry.payment_method,
-      client_request_id: clientRequestId,
-    });
+    if (editingRevenue) {
+      await updateManualRevenue({
+        id: editingRevenue.id,
+        source_type: entry.source_type,
+        client_name: entry.client_name,
+        description: entry.description,
+        competence_date: entry.competence_date,
+        issued_at: entry.issued_at,
+        due_date: entry.due_date,
+        amount: entry.amount,
+      });
+      setEditingRevenue(null);
+    } else {
+      await createRevenue({
+        source_type: entry.source_type,
+        client_name: entry.client_name,
+        description: entry.description,
+        competence_date: entry.competence_date,
+        issued_at: entry.issued_at,
+        due_date: entry.due_date,
+        amount: entry.amount,
+        status: entry.status === "paid" ? "paid" : "pending",
+        payment_method: entry.payment_method,
+        client_request_id: clientRequestId,
+      });
+    }
     await reload();
   };
+
+  const startRevenueEdit = (entry: BillingEntry) => {
+    if (!isManualRevenue(entry)) return;
+    setEditingRevenue(entry);
+    setModal("revenue");
+  };
+
+  const removeManualRevenue = async (entry: BillingEntry) => {
+    if (!isSupabaseConfigured || !isManualRevenue(entry)) return;
+    const hasReceipt = Number(entry.received_amount || 0) > 0;
+    const confirmed = window.confirm(
+      hasReceipt
+        ? `Excluir definitivamente o lançamento de ${entry.client_name} e também o recebimento registrado?`
+        : `Excluir definitivamente o lançamento de ${entry.client_name}?`,
+    );
+    if (!confirmed) return;
+    setError("");
+    try {
+      await deleteManualRevenue(entry.id);
+      await reload();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Não foi possível excluir o lançamento.");
+    }
+  };
+
+  const editEntrySource = (entry: BillingEntry) => {
+    if (isManualRevenue(entry)) {
+      startRevenueEdit(entry);
+      return;
+    }
+    if (entry.appointment_id) {
+      void onEditAppointment?.(entry.appointment_id);
+      return;
+    }
+    if (entry.patient_id) {
+      const patient = data.patients.find((item) => item.id === entry.patient_id);
+      if (patient) setEditingPatient(patient);
+    }
+  };
+
+  const editEntryLabel = (entry: BillingEntry) => isManualRevenue(entry)
+    ? "Editar lançamento"
+    : entry.appointment_id
+      ? "Editar atendimento"
+      : "Editar pacote";
 
   const saveExpense = async (entry: Omit<ExpenseEntry, "id" | "paid_at">, clientRequestId: string) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
@@ -638,7 +718,7 @@ export function FinancePage({
           <MonthPicker value={month} onChange={setMonth} />
           {isSupabaseConfigured && <Button variant="quiet" size="icon" onClick={() => void reload()} disabled={loading} aria-label="Atualizar"><RefreshCw className={loading ? "animate-spin" : ""} /></Button>}
           <Button variant="quiet" onClick={() => { setEditingExpense(null); setModal("expense"); }}><TrendingDown /> Nova despesa</Button>
-          <Button variant="dashboard" className="rounded-xl" onClick={() => setModal("revenue")}><TrendingUp /> Nova receita</Button>
+          <Button variant="dashboard" className="rounded-xl" onClick={() => { setEditingRevenue(null); setModal("revenue"); }}><TrendingUp /> Nova receita</Button>
         </div>
       </section>
 
@@ -728,9 +808,11 @@ export function FinancePage({
                         <div className="flex justify-end gap-1.5">
                           {entry.type === "revenue" && entry.billingEntry && Number(entry.billingEntry.received_amount || 0) > 0 ? (
                             <>
+                              <Button size="sm" variant="quiet" onClick={() => editEntrySource(entry.billingEntry!)}><Pencil /> {editEntryLabel(entry.billingEntry!)}</Button>
                               <Button size="sm" variant="quiet" onClick={() => issueReceipt(entry.billingEntry!)}><ReceiptText /> Recibo</Button>
                               <Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry.billingEntry!)}><Pencil /> Editar recebimento</Button>
                               <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeReceipt(entry.billingEntry!)}><Trash2 /> Excluir recebimento</Button>
+                              {isManualRevenue(entry.billingEntry!) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry.billingEntry!)}><Trash2 /> Excluir lançamento</Button>}
                             </>
                           ) : entry.type === "expense" && entry.expenseEntry ? (
                             <>
@@ -759,9 +841,9 @@ export function FinancePage({
             <span className="rounded-full bg-accent px-3 py-1 text-[10px] font-medium">Total {money(summary.billed)}</span>
           </div>
           <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left">
-              <thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Competência</th><th className="px-3 py-3 font-medium">Paciente / cliente</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Faturado</th></tr></thead>
-              <tbody>{data.billed.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.client_name}</td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4 text-xs text-muted-foreground">{entry.description}</td><td className="px-3 py-4"><Status status={entry.status} /></td><td className="px-3 py-4 text-right text-xs font-semibold">{money(Number(entry.amount))}</td></tr>)}</tbody>
+            <table className="w-full min-w-[1180px] text-left">
+              <thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Competência</th><th className="px-3 py-3 font-medium">Paciente / cliente</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Faturado</th><th className="px-3 py-3 text-right font-medium">Ações</th></tr></thead>
+              <tbody>{data.billed.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.client_name}</td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4 text-xs text-muted-foreground">{entry.description}</td><td className="px-3 py-4"><Status status={entry.status} /></td><td className="px-3 py-4 text-right text-xs font-semibold">{money(Number(entry.amount))}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => editEntrySource(entry)}><Pencil /> {editEntryLabel(entry)}</Button>{Number(entry.received_amount || 0) > 0 && <Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry)}><ReceiptText /> Editar recebimento</Button>}{Number(entry.received_amount || 0) <= 0 && entry.status !== "cancelled" && <Button size="sm" variant="quiet" onClick={() => receive(entry)}><Check /> Receber</Button>}{isManualRevenue(entry) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry)}><Trash2 /> Excluir</Button>}</div></td></tr>)}</tbody>
             </table>
             {data.billed.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhum faturamento neste período.</p>}
           </div>
@@ -777,7 +859,7 @@ export function FinancePage({
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[1080px] text-left">
               <thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Recebimento</th><th className="px-3 py-3 font-medium">Paciente / cliente</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Forma</th><th className="px-3 py-3 text-right font-medium">Faturado</th><th className="px-3 py-3 text-right font-medium">Recebido</th><th className="px-3 py-3 text-right font-medium">Ações</th></tr></thead>
-              <tbody>{data.receivedInPeriod.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.received_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.client_name}</td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4 text-xs text-muted-foreground">{entry.description}</td><td className="px-3 py-4 text-xs">{entry.payment_method ? paymentMethodLabels[entry.payment_method] : "Não informado"}</td><td className="px-3 py-4 text-right text-xs">{money(Number(entry.amount))}</td><td className="px-3 py-4 text-right text-xs font-semibold text-emerald-700">{money(Number(entry.received_amount || 0))}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => issueReceipt(entry)}><ReceiptText /> Recibo</Button><Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry)}><Pencil /> Editar recebimento</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeReceipt(entry)}><Trash2 /> Excluir recebimento</Button></div></td></tr>)}</tbody>
+              <tbody>{data.receivedInPeriod.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.received_at)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.client_name}</td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4 text-xs text-muted-foreground">{entry.description}</td><td className="px-3 py-4 text-xs">{entry.payment_method ? paymentMethodLabels[entry.payment_method] : "Não informado"}</td><td className="px-3 py-4 text-right text-xs">{money(Number(entry.amount))}</td><td className="px-3 py-4 text-right text-xs font-semibold text-emerald-700">{money(Number(entry.received_amount || 0))}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => editEntrySource(entry)}><Pencil /> {editEntryLabel(entry)}</Button><Button size="sm" variant="quiet" onClick={() => issueReceipt(entry)}><ReceiptText /> Recibo</Button><Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry)}><Pencil /> Editar recebimento</Button><Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeReceipt(entry)}><Trash2 /> Excluir recebimento</Button>{isManualRevenue(entry) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry)}><Trash2 /> Excluir lançamento</Button>}</div></td></tr>)}</tbody>
             </table>
             {data.receivedInPeriod.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhum pagamento recebido neste período.</p>}
           </div>
@@ -866,7 +948,7 @@ export function FinancePage({
                           <td className="px-3 py-3 text-xs text-emerald-700">{money(Number(entry.received_amount || 0))}</td>
                           <td className="px-3 py-3 text-xs font-semibold">{money(outstanding(entry))}</td>
                           <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.className}`}>{state.label}</span></td>
-                          <td className="px-4 py-3"><div className="flex flex-wrap justify-end gap-2">{Number(entry.received_amount || 0) > 0 && <Button size="sm" variant="quiet" onClick={() => issueReceipt(entry)}><ReceiptText /> Recibo</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => issueCollectionNotice(entry)}><FileText /> Nota de cobrança</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => receive(entry)}><Check /> Baixar</Button>}{!isOpen && Number(entry.received_amount || 0) <= 0 && <span className="text-[10px] text-muted-foreground">Concluída</span>}</div></td>
+                          <td className="px-4 py-3"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => editEntrySource(entry)}><Pencil /> {editEntryLabel(entry)}</Button>{Number(entry.received_amount || 0) > 0 && <Button size="sm" variant="quiet" onClick={() => issueReceipt(entry)}><ReceiptText /> Recibo</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => issueCollectionNotice(entry)}><FileText /> Nota de cobrança</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => receive(entry)}><Check /> Baixar</Button>}{isManualRevenue(entry) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry)}><Trash2 /> Excluir</Button>}{!isOpen && Number(entry.received_amount || 0) <= 0 && <span className="text-[10px] text-muted-foreground">Concluída</span>}</div></td>
                         </tr>;
                       })}
                     </tbody>
@@ -896,8 +978,8 @@ export function FinancePage({
         </section>
       )}
 
-      {modal === "revenue" && <RevenueModal onClose={() => setModal(null)} onSave={async (entry, requestId) => { await saveRevenue(entry, requestId); setModal(null); }} />}
-      {modal === "expense" && <ExpenseModal initialExpense={editingExpense} onClose={() => { setEditingExpense(null); setModal(null); }} onSave={async (entry, requestId) => { await saveExpense(entry, requestId); setEditingExpense(null); setModal(null); }} />}
+      {modal === "revenue" && <RevenueModal initialRevenue={editingRevenue} defaultDate={defaultDateForMonth(month)} onClose={() => { setEditingRevenue(null); setModal(null); }} onSave={async (entry, requestId) => { await saveRevenue(entry, requestId); setEditingRevenue(null); setModal(null); }} />}
+      {modal === "expense" && <ExpenseModal initialExpense={editingExpense} defaultDate={defaultDateForMonth(month)} onClose={() => { setEditingExpense(null); setModal(null); }} onSave={async (entry, requestId) => { await saveExpense(entry, requestId); setEditingExpense(null); setModal(null); }} />}
       {editingReceipt && <ReceiptModal entry={editingReceipt} onClose={() => setEditingReceipt(null)} onSave={saveReceipt} />}
       {editingPatient && <PatientBillingModal patient={editingPatient} onClose={() => setEditingPatient(null)} onSave={savePatientBilling} />}
     </>
@@ -928,34 +1010,52 @@ function Modal({ title, subtitle, onClose, children }: { title: string; subtitle
   return <div className="fixed inset-0 z-[120] grid place-items-center bg-foreground/25 p-4 backdrop-blur-sm" onMouseDown={onClose}><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><div className="flex items-start justify-between border-b border-border p-5"><div><h2 className="font-display text-xl">{title}</h2><p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p></div><Button variant="ghost" size="icon" onClick={onClose}><X /></Button></div>{children}</div></div>;
 }
 
-function RevenueModal({ onClose, onSave }: { onClose: () => void; onSave: (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, requestId: string) => Promise<void> }) {
+function RevenueModal({ initialRevenue, defaultDate, onClose, onSave }: { initialRevenue?: BillingEntry | null; defaultDate: string; onClose: () => void; onSave: (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, requestId: string) => Promise<void> }) {
   const requestId = useRef(crypto.randomUUID()).current;
-  const [source, setSource] = useState<RevenueSource>("session");
-  const [client, setClient] = useState("");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
-  const [competence, setCompetence] = useState(isoToday());
-  const [dueDate, setDueDate] = useState(isoToday());
-  const [paid, setPaid] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("pix");
+  const isEditing = Boolean(initialRevenue);
+  const [source, setSource] = useState<RevenueSource>(initialRevenue?.source_type ?? "session");
+  const [client, setClient] = useState(initialRevenue?.client_name ?? "");
+  const [description, setDescription] = useState(initialRevenue?.description ?? "");
+  const [amount, setAmount] = useState(initialRevenue ? String(initialRevenue.amount).replace(".", ",") : "");
+  const [competence, setCompetence] = useState(initialRevenue?.competence_date ?? defaultDate);
+  const [dueDate, setDueDate] = useState(initialRevenue?.due_date ?? defaultDate);
+  const [paid, setPaid] = useState(initialRevenue ? Number(initialRevenue.received_amount || 0) > 0 : false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initialRevenue?.payment_method ?? "pix");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const submit = async () => {
     const numeric = Number(amount.replace(",", "."));
-    if (!client.trim() || !Number.isFinite(numeric) || numeric <= 0) return;
+    if (!client.trim() || !Number.isFinite(numeric) || numeric <= 0) {
+      setError("Informe cliente e valor válidos.");
+      return;
+    }
+    if (!competence) {
+      setError("Informe a competência do lançamento.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
-      await onSave({ source_type: source, client_name: client.trim(), description: description.trim() || sourceLabels[source], competence_date: competence, issued_at: isoToday(), due_date: dueDate || null, amount: numeric, status: paid ? "paid" : "pending", payment_method: paid ? paymentMethod : null }, requestId);
-    } catch {
-      setError("Não foi possível salvar a receita. Tente novamente.");
+      await onSave({
+        source_type: source,
+        client_name: client.trim(),
+        description: description.trim() || sourceLabels[source],
+        competence_date: competence,
+        issued_at: initialRevenue?.issued_at ?? competence,
+        due_date: dueDate || null,
+        amount: numeric,
+        status: isEditing ? initialRevenue?.status ?? "pending" : paid ? "paid" : "pending",
+        payment_method: isEditing ? initialRevenue?.payment_method ?? null : paid ? paymentMethod : null,
+      }, requestId);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : isEditing ? "Não foi possível atualizar a receita." : "Não foi possível salvar a receita.");
     } finally {
       setSaving(false);
     }
   };
 
-  return <Modal title="Nova receita" subtitle="Registre entradas de atendimentos, pacotes, empresas, testes e outros serviços." onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Receita / entrada</div><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel><label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>{paid && <FieldLabel label="Forma de pagamento"><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} className="input-finance">{Object.entries(paymentMethodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : "Salvar receita"}</Button></div></div></Modal>;
+  return <Modal title={isEditing ? "Editar lançamento" : "Nova receita"} subtitle={isEditing ? "Altere o faturamento manual sem perder o histórico do recebimento." : "Registre entradas atuais ou de meses anteriores."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Receita / entrada{isEditing && <span className="ml-2 text-muted-foreground">• recebimentos são editados separadamente</span>}</div><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor faturado"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência / mês do faturamento"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Pode informar uma data de mês anterior.</span></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel>{!isEditing && <label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>}{!isEditing && paid && <FieldLabel label="Forma de pagamento"><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} className="input-finance">{Object.entries(paymentMethodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : isEditing ? "Salvar alterações" : "Salvar receita"}</Button></div></div></Modal>;
 }
 
 function ReceiptModal({ entry, onClose, onSave }: { entry: BillingEntry; onClose: () => void; onSave: (input: { id: string; received_amount: number; received_at: string; payment_method: PaymentMethod }) => Promise<void> }) {
@@ -1020,14 +1120,14 @@ function ReceiptModal({ entry, onClose, onSave }: { entry: BillingEntry; onClose
   );
 }
 
-function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: ExpenseEntry | null; onClose: () => void; onSave: (entry: Omit<ExpenseEntry, "id" | "paid_at">, requestId: string) => Promise<void> }) {
+function ExpenseModal({ initialExpense, defaultDate, onClose, onSave }: { initialExpense?: ExpenseEntry | null; defaultDate: string; onClose: () => void; onSave: (entry: Omit<ExpenseEntry, "id" | "paid_at">, requestId: string) => Promise<void> }) {
   const requestId = useRef(crypto.randomUUID()).current;
   const [category, setCategory] = useState(initialExpense?.category ?? "transporte");
   const [description, setDescription] = useState(initialExpense?.description ?? "");
   const [amount, setAmount] = useState(initialExpense ? String(initialExpense.amount).replace(".", ",") : "");
-  const [competence, setCompetence] = useState(initialExpense?.competence_date ?? isoToday());
+  const [competence, setCompetence] = useState(initialExpense?.competence_date ?? defaultDate);
   const [recurrence, setRecurrence] = useState<"fixed" | "variable">(initialExpense?.recurrence ?? "variable");
-  const [fixedDay, setFixedDay] = useState(() => Number((initialExpense?.due_date ?? initialExpense?.competence_date ?? isoToday()).slice(8, 10)) || 5);
+  const [fixedDay, setFixedDay] = useState(() => Number((initialExpense?.due_date ?? initialExpense?.competence_date ?? defaultDate).slice(8, 10)) || 5);
   const [paid, setPaid] = useState(initialExpense ? initialExpense.status === "paid" : true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1045,14 +1145,14 @@ function ExpenseModal({ initialExpense, onClose, onSave }: { initialExpense?: Ex
     setError("");
     try {
       await onSave({ category, description: description.trim(), competence_date: competence, due_date: dueDate, amount: numeric, recurrence, status: paid ? "paid" : "pending", fixed_rule_id: initialExpense?.fixed_rule_id ?? null }, requestId);
-    } catch {
-      setError(isEditing ? "Não foi possível atualizar a despesa. Tente novamente." : "Não foi possível salvar a despesa. Tente novamente.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : isEditing ? "Não foi possível atualizar a despesa." : "Não foi possível salvar a despesa.");
     } finally {
       setSaving(false);
     }
   };
 
-  return <Modal title={isEditing ? "Editar despesa" : "Nova despesa"} subtitle={isEditing ? "Atualize os dados da despesa selecionada." : "Registre custos variáveis ou uma despesa fixa mensal."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-destructive/15 bg-destructive/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Despesa / saída</div><FieldLabel label="Categoria"><select value={category} onChange={(event) => setCategory(event.target.value)} className="input-finance">{Object.entries(expenseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Ex.: Aluguel do consultório" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label={recurrence === "fixed" ? "Mês inicial" : "Competência"}><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /></FieldLabel><FieldLabel label="Tipo"><select value={recurrence} onChange={(event) => setRecurrence(event.target.value as "fixed" | "variable")} className="input-finance"><option value="variable">Variável / avulsa</option><option value="fixed">Fixa mensal</option></select></FieldLabel>{recurrence === "fixed" && <FieldLabel label="Dia fixo todo mês"><input type="number" min={1} max={28} value={fixedDay} onChange={(event) => setFixedDay(Number(event.target.value))} className="input-finance" /></FieldLabel>} {recurrence === "fixed" && <div className="rounded-xl border border-border bg-background/45 p-3 text-[10px] leading-4 text-muted-foreground sm:col-span-2">O sistema criará esta despesa automaticamente nos próximos meses com o mesmo valor e vencimento no dia {fixedDay || "—"}.</div>}<label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "fixed" ? "A despesa deste primeiro mês já foi paga" : "Já foi paga"}</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !description.trim() || !amount}>{saving ? (isEditing ? "Salvando alterações..." : "Salvando...") : (isEditing ? "Salvar alterações" : "Salvar despesa")}</Button></div></div></Modal>;
+  return <Modal title={isEditing ? "Editar despesa" : "Nova despesa"} subtitle={isEditing ? "Atualize os dados da despesa selecionada." : "Registre custos atuais ou de meses anteriores, variáveis ou fixos."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-destructive/15 bg-destructive/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Despesa / saída</div><FieldLabel label="Categoria"><select value={category} onChange={(event) => setCategory(event.target.value)} className="input-finance">{Object.entries(expenseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Ex.: Aluguel do consultório" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label={recurrence === "fixed" ? "Mês inicial" : "Competência / mês da despesa"}><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Pode informar uma data de mês anterior.</span></FieldLabel><FieldLabel label="Tipo"><select value={recurrence} onChange={(event) => setRecurrence(event.target.value as "fixed" | "variable")} className="input-finance"><option value="variable">Variável / avulsa</option><option value="fixed">Fixa mensal</option></select></FieldLabel>{recurrence === "fixed" && <FieldLabel label="Dia fixo todo mês"><input type="number" min={1} max={28} value={fixedDay} onChange={(event) => setFixedDay(Number(event.target.value))} className="input-finance" /></FieldLabel>} {recurrence === "fixed" && <div className="rounded-xl border border-border bg-background/45 p-3 text-[10px] leading-4 text-muted-foreground sm:col-span-2">O sistema criará esta despesa automaticamente nos próximos meses com o mesmo valor e vencimento no dia {fixedDay || "—"}.</div>}<label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "fixed" ? "A despesa deste primeiro mês já foi paga" : "Já foi paga"}</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !description.trim() || !amount}>{saving ? (isEditing ? "Salvando alterações..." : "Salvando...") : (isEditing ? "Salvar alterações" : "Salvar despesa")}</Button></div></div></Modal>;
 }
 
 function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBilling; onClose: () => void; onSave: (patient: PatientBilling) => Promise<void> }) {

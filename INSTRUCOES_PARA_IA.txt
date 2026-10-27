@@ -1,0 +1,31 @@
+ANA TAGES — CONTINUIDADE v2.0.40
+
+VERSÃO ATUAL
+v2.0.40
+
+BASE
+v2.0.38-materiais.
+
+PRINCIPAIS ALTERAÇÕES
+1. Financeiro aceita lançamentos retroativos com o mês selecionado como data padrão.
+2. Receita/faturamento manual pode ser editado e excluído.
+3. Faturamentos vinculados a sessão são editados pelo atendimento de origem.
+4. Faturamentos vinculados a pacote são editados pela regra do pacote.
+5. Recebimentos continuam editáveis e podem ser desfeitos separadamente.
+6. Despesas mantêm editar/excluir e agora exibem mensagens reais do backend ao falhar.
+7. Pacientes têm ações explícitas Editar e Arquivar.
+8. Detalhe do paciente tem Editar sessão em cada sessão vinculada.
+9. Aba Sessões e Agenda exibem edição de forma mais explícita.
+
+SQL OBRIGATÓRIO DESTA VERSÃO
+SQL/14 - Edicao administrativa e financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.40.sql
+
+NÃO executar migrations antigas nem SQLs anteriores novamente.
+
+COMMIT SUGERIDO
+Adicionar edicao administrativa e financeiro editavel v2.0.40
+
+PUBLICAÇÃO
+Supabase: executar somente o SQL acima.
+GitHub: subir o conteúdo desta versão preservando .git.
+Cloudflare: aguardar deployment automático ficar Success.

@@ -5,12 +5,14 @@ import {
   testCreateRevenue,
   testDeleteExpense,
   testDeleteRevenueReceipt,
+  testDeleteManualRevenue,
   testLoadFinanceBundle,
   testMarkExpensePaid,
   testMarkRevenuePaid,
   testUpdateExpense,
   testUpdatePatientBilling,
   testUpdateRevenueReceipt,
+  testUpdateManualRevenue,
 } from "../../lib/test-data";
 import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, PaymentMethod, RevenueSource } from "./types";
 
@@ -137,6 +139,39 @@ export async function createRevenue(input: {
     p_payment_method: input.status === "paid" ? input.payment_method ?? null : null,
     p_client_request_id: input.client_request_id ?? crypto.randomUUID(),
   });
+  if (error) throw error;
+}
+
+
+export async function updateManualRevenue(input: {
+  id: string;
+  source_type: RevenueSource;
+  client_name: string;
+  description: string;
+  competence_date: string;
+  issued_at: string;
+  due_date: string | null;
+  amount: number;
+}) {
+  if (isTestMode()) return testUpdateManualRevenue(input);
+  if (!supabase) throw new Error("Supabase não configurado");
+  const { error } = await supabase.rpc("update_manual_revenue", {
+    p_id: input.id,
+    p_source_type: input.source_type,
+    p_client_name: cleanText(input.client_name, 160),
+    p_description: cleanText(input.description, 500),
+    p_competence_date: input.competence_date,
+    p_issued_at: input.issued_at,
+    p_due_date: input.due_date || null,
+    p_amount: cleanMoney(input.amount),
+  });
+  if (error) throw error;
+}
+
+export async function deleteManualRevenue(id: string) {
+  if (isTestMode()) return testDeleteManualRevenue(id);
+  if (!supabase) throw new Error("Supabase não configurado");
+  const { error } = await supabase.rpc("delete_manual_revenue", { p_id: id });
   if (error) throw error;
 }
 
