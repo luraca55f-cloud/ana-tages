@@ -49,3 +49,7 @@ Não execute migration inicial, SQL de zerar conta ou pastas antigas por causa d
 
 14) v2.0.40 — edição administrativa e financeiro editável
 Executar: SQL/14 - Edicao administrativa e financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.40.sql
+
+15) v2.0.41 — Central de Testes e anti-pausa
+SQL a rodar: NENHUM.
+A atualização usa apenas o perfil de homologação, a Management API já configurada e Cron Trigger do Cloudflare Worker.

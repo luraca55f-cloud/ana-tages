@@ -17,6 +17,10 @@
       "VAULT_RECOVERY_SECRET"
     ]
   },
+  // Anti-pausa: três consultas leves por dia. Reduz o risco de pausa no plano Free.
+  "triggers": {
+    "crons": ["17 3,11,19 * * *"]
+  },
   "ratelimits": [
     {
       "name": "HTTP_RATE_LIMITER",

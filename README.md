@@ -295,6 +295,19 @@ Na visão detalhada de cada paciente existe agora o botão **Nova sessão**. Ele
 - Tipos de arquivo mantidos por segurança: PDF, PNG, JPG/JPEG e WEBP, até 10 MB no perfil real.
 - SQL novo: **não**.
 
-## v2.0.40
+## v2.0.41
 
 Ajustes administrativos solicitados pela operação do consultório: lançamentos retroativos, edição/exclusão de receitas manuais e despesas, ações explícitas para editar/arquivar pacientes e edição de sessões pelo próprio paciente. Cobranças automáticas continuam sendo alteradas pela origem (atendimento/pacote) para evitar inconsistência financeira.
+
+
+## v2.0.41 — Central de Testes e anti-pausa
+
+- Novo módulo **Central de Testes**, visível somente no perfil de homologação.
+- Um clique executa smoke tests locais de pacientes, sessões, cobrança, parcelamento, pacotes, receitas, despesas, materiais, prontuário, prestação de serviço, relatórios e configurações.
+- O banco local do perfil de teste é restaurado ao final; os testes não alteram dados reais da Ana.
+- A Central também consulta o Supabase real **somente em leitura** e confere tabelas/funções essenciais, ajudando a detectar SQL faltando ou projeto indisponível antes da Ana usar.
+- O Worker ganhou Cron Trigger de anti-pausa (`17 3,11,19 * * *`, UTC), executando três consultas leves por dia.
+- Há botão **Testar agora** na Central para validar a consulta de atividade manualmente.
+- O anti-pausa reduz o risco de pausa no plano Free, mas não é garantia; plano pago continua sendo a única forma garantida de não sofrer pausa automática por inatividade.
+- SQL novo: **NÃO**. SQL a rodar nesta versão: **NENHUM**.
+- Commit sugerido: `Adicionar Central de Testes e anti-pausa v2.0.41`.

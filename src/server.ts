@@ -404,6 +404,143 @@ async function handleTestSupabaseUsageApi(request: Request, env: Env): Promise<R
   }
 }
 
+
+
+type AntiPauseResult = {
+  configured: boolean;
+  management_query_ok: boolean;
+  rest_query_ok: boolean;
+  generated_at: string;
+};
+
+async function runSupabaseKeepAlive(env: Env): Promise<AntiPauseResult> {
+  const result: AntiPauseResult = {
+    configured: Boolean(env.SUPABASE_MANAGEMENT_TOKEN && env.SUPABASE_PROJECT_REF && SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY),
+    management_query_ok: false,
+    rest_query_ok: false,
+    generated_at: new Date().toISOString(),
+  };
+
+  try {
+    const payload = await managementApiJson(env, "/database/query/read-only", {
+      method: "POST",
+      body: JSON.stringify({ query: "select 1 as ok, pg_catalog.now() as checked_at" }),
+    });
+    const row = firstResultRow(payload);
+    result.management_query_ok = Number(row?.["ok"] ?? 0) === 1;
+  } catch (cause) {
+    console.error("Supabase keep-alive management query failed", cause);
+  }
+
+  if (SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY) {
+    try {
+      const headers = new Headers({ apikey: SUPABASE_PUBLISHABLE_KEY, accept: "application/json" });
+      // As chaves anon antigas são JWT; as publishable keys novas usam somente apikey.
+      if (SUPABASE_PUBLISHABLE_KEY.split(".").length === 3) headers.set("authorization", `Bearer ${SUPABASE_PUBLISHABLE_KEY}`);
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/app_settings?select=owner_id&limit=1`, {
+        method: "GET",
+        headers,
+      });
+      result.rest_query_ok = response.ok;
+      if (!response.ok) console.error("Supabase keep-alive REST query failed", response.status, await response.text());
+    } catch (cause) {
+      console.error("Supabase keep-alive REST request failed", cause);
+    }
+  }
+
+  return result;
+}
+
+async function handleTestCenterApi(request: Request, env: Env): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith("/api/test-center/")) return null;
+
+  const session = await verifyTestSession(request, env);
+  if (!session) return Response.json({ error: "Sessão de teste obrigatória." }, { status: 401 });
+
+  if (url.pathname.endsWith("/keepalive")) {
+    if (request.method !== "POST") return new Response("Método não permitido", { status: 405, headers: { allow: "POST" } });
+    const antiPause = await runSupabaseKeepAlive(env);
+    return Response.json({ anti_pause: antiPause }, { headers: { "cache-control": "no-store" } });
+  }
+
+  if (url.pathname.endsWith("/health")) {
+    if (request.method !== "GET") return new Response("Método não permitido", { status: 405, headers: { allow: "GET" } });
+    try {
+      const query = `
+        select
+          to_regclass('public.patients') is not null as patients,
+          to_regclass('public.appointments') is not null as appointments,
+          to_regclass('public.billing_entries') is not null as billing_entries,
+          to_regclass('public.expenses') is not null as expenses,
+          to_regclass('public.package_plans') is not null as package_plans,
+          to_regclass('public.materials') is not null as materials,
+          to_regclass('public.app_settings') is not null as app_settings,
+          to_regclass('public.service_work_entries') is not null as service_work_entries,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='ensure_appointment_billings') as fn_ensure_appointment_billings,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='save_appointment_billing_plan') as fn_save_appointment_billing_plan,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_manual_revenue') as fn_create_manual_revenue,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='update_manual_revenue') as fn_update_manual_revenue,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='delete_manual_revenue') as fn_delete_manual_revenue,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_expense') as fn_create_expense,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='update_expense') as fn_update_expense,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='delete_expense') as fn_delete_expense,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_service_work_entry') as fn_create_service_work_entry
+      `;
+      const payload = await managementApiJson(env, "/database/query/read-only", { method: "POST", body: JSON.stringify({ query }) });
+      const row = firstResultRow(payload);
+      if (!row) throw new Error("O Supabase não retornou o diagnóstico do banco.");
+
+      const groups: Array<{ id: string; label: string; keys: string[]; okDetail: string }> = [
+        { id: "database", label: "Conexão com o banco real", keys: ["patients"], okDetail: "Supabase respondeu à consulta somente leitura." },
+        { id: "clinic-schema", label: "Pacientes, agenda e materiais", keys: ["patients", "appointments", "materials", "app_settings"], okDetail: "Estruturas clínicas essenciais encontradas." },
+        { id: "finance-schema", label: "Financeiro e parcelamentos", keys: ["billing_entries", "expenses", "package_plans"], okDetail: "Tabelas financeiras essenciais encontradas." },
+        { id: "finance-routines", label: "Funções financeiras de edição e cobrança", keys: ["fn_ensure_appointment_billings", "fn_save_appointment_billing_plan", "fn_create_manual_revenue", "fn_update_manual_revenue", "fn_delete_manual_revenue", "fn_create_expense", "fn_update_expense", "fn_delete_expense"], okDetail: "Funções financeiras esperadas estão instaladas." },
+        { id: "service-work", label: "Prestação de Serviço", keys: ["service_work_entries", "fn_create_service_work_entry"], okDetail: "Estrutura de prestação de serviço encontrada." },
+      ];
+
+      const checks = groups.map((group) => {
+        const missing = group.keys.filter((key) => row[key] !== true);
+        return {
+          id: group.id,
+          label: group.label,
+          ok: missing.length === 0,
+          detail: missing.length === 0 ? group.okDetail : `Faltando no banco: ${missing.join(", ")}.`,
+        };
+      });
+      checks.push({
+        id: "runtime",
+        label: "Configuração segura do Worker",
+        ok: Boolean(env.TEST_LOGIN_EMAIL && env.TEST_LOGIN_PASSWORD && env.SUPABASE_MANAGEMENT_TOKEN && env.SUPABASE_PROJECT_REF),
+        detail: env.TEST_LOGIN_EMAIL && env.TEST_LOGIN_PASSWORD && env.SUPABASE_MANAGEMENT_TOKEN && env.SUPABASE_PROJECT_REF
+          ? "Credenciais de homologação e leitura estão disponíveis no runtime."
+          : "Há variável/secret obrigatório ausente no runtime do Cloudflare.",
+      });
+
+      const antiPause = await runSupabaseKeepAlive(env);
+      checks.push({
+        id: "anti-pause",
+        label: "Consulta anti-pausa",
+        ok: antiPause.management_query_ok || antiPause.rest_query_ok,
+        detail: antiPause.management_query_ok || antiPause.rest_query_ok
+          ? "O Supabase respondeu à consulta leve de atividade."
+          : "A consulta de atividade não respondeu; revise o token/URL do projeto.",
+      });
+
+      return Response.json({ checks, anti_pause: antiPause }, { headers: { "cache-control": "no-store" } });
+    } catch (cause) {
+      console.error("Test center health check failed", cause);
+      const error = cause as ManagementApiError;
+      return Response.json({ error: error.message || "Não foi possível verificar o servidor e o Supabase." }, {
+        status: error.status && error.status >= 400 && error.status < 600 ? error.status : 502,
+        headers: { "cache-control": "no-store" },
+      });
+    }
+  }
+
+  return new Response("Não encontrado", { status: 404 });
+}
+
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy": [
     "default-src 'self'",
@@ -496,6 +633,9 @@ export default {
       const testUsageResponse = await handleTestSupabaseUsageApi(request, env);
       if (testUsageResponse) return secureResponse(testUsageResponse, request);
 
+      const testCenterResponse = await handleTestCenterApi(request, env);
+      if (testCenterResponse) return secureResponse(testCenterResponse, request);
+
       const vaultRecoveryResponse = await handleVaultRecoveryApi(request, env);
       if (vaultRecoveryResponse) return secureResponse(vaultRecoveryResponse, request);
 
@@ -508,5 +648,15 @@ export default {
         headers: { "content-type": "text/html; charset=utf-8" },
       }), request);
     }
+  },
+  async scheduled(_controller: unknown, env: Env, ctx: { waitUntil: (promise: Promise<unknown>) => void }) {
+    ctx.waitUntil((async () => {
+      const result = await runSupabaseKeepAlive(env);
+      if (!result.management_query_ok && !result.rest_query_ok) {
+        console.error("Anti-pausa: nenhuma consulta ao Supabase respondeu.", result);
+      } else {
+        console.log("Anti-pausa: atividade leve registrada no Supabase.", result);
+      }
+    })());
   },
 };

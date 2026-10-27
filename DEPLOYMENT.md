@@ -171,9 +171,22 @@ O SQL 13 é incremental: não zera pacientes, sessões, cobranças, pacotes ou p
 3. Commit sugerido: `Organizar biblioteca de materiais do consultório v2.0.38`.
 4. Faça `Push origin` e aguarde o deployment do Cloudflare ficar `Success`.
 
-## Atualização v2.0.40
+## Atualização v2.0.41
 
-1. No Supabase SQL Editor, executar somente `SQL_ATUALIZACAO_ANA_TAGES_v2.0.40.sql` da pasta `SQL/14 - Edicao administrativa e financeiro`.
-2. Subir os arquivos da v2.0.40 para o GitHub preservando `.git`.
-3. Commit sugerido: `Adicionar edicao administrativa e financeiro editavel v2.0.40`.
+1. No Supabase SQL Editor, executar somente `SQL_ATUALIZACAO_ANA_TAGES_v2.0.41.sql` da pasta `SQL/14 - Edicao administrativa e financeiro`.
+2. Subir os arquivos da v2.0.41 para o GitHub preservando `.git`.
+3. Commit sugerido: `Adicionar edicao administrativa e financeiro editavel v2.0.41`.
 4. Fazer `Push origin` e aguardar o deployment do Cloudflare ficar `Success`.
+
+
+## v2.0.41 — Central de Testes e anti-pausa
+
+- Novo módulo **Central de Testes**, visível somente no perfil de homologação.
+- Um clique executa smoke tests locais de pacientes, sessões, cobrança, parcelamento, pacotes, receitas, despesas, materiais, prontuário, prestação de serviço, relatórios e configurações.
+- O banco local do perfil de teste é restaurado ao final; os testes não alteram dados reais da Ana.
+- A Central também consulta o Supabase real **somente em leitura** e confere tabelas/funções essenciais, ajudando a detectar SQL faltando ou projeto indisponível antes da Ana usar.
+- O Worker ganhou Cron Trigger de anti-pausa (`17 3,11,19 * * *`, UTC), executando três consultas leves por dia.
+- Há botão **Testar agora** na Central para validar a consulta de atividade manualmente.
+- O anti-pausa reduz o risco de pausa no plano Free, mas não é garantia; plano pago continua sendo a única forma garantida de não sofrer pausa automática por inatividade.
+- SQL novo: **NÃO**. SQL a rodar nesta versão: **NENHUM**.
+- Commit sugerido: `Adicionar Central de Testes e anti-pausa v2.0.41`.

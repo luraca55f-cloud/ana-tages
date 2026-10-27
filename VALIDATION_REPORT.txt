@@ -1,12 +1,12 @@
-ANA TAGES v2.0.40 — RELATÓRIO DE VALIDAÇÃO
+ANA TAGES v2.0.41 — RELATÓRIO DE VALIDAÇÃO
 
-Base utilizada: v2.0.38-materiais.
+Validações executadas no pacote:
+- scripts/verify-project.mjs: OK — 30 arquivos de fonte verificados; imports locais e dependências conferidos.
+- Parse/transpilação TypeScript/TSX dos arquivos em src com TypeScript 5.8.3: OK — sem erro de sintaxe.
+- Estrutura da Central de Testes: conferida.
+- Rotas /api/test-center/health e /api/test-center/keepalive: conferidas no código.
+- Cron Trigger Cloudflare: configurado em wrangler.jsonc para 03:17, 11:17 e 19:17 UTC.
+- SQL novo: NÃO.
 
-Validações executadas:
-- scripts/verify-project.mjs: OK — 29 arquivos de fonte verificados; imports locais e dependências conferidos.
-- Parser TypeScript/TSX 5.8.3: OK — 28 arquivos TS/TSX analisados, 0 erros de sintaxe.
-- Revisão das novas RPCs SQL: update_manual_revenue e delete_manual_revenue limitadas a lançamentos manuais do usuário autenticado.
-- Fluxos vinculados a atendimento/pacote continuam sendo editados pela origem, evitando dessincronização financeira.
-
-Limitação desta validação local:
-- O build Vite/typecheck completo não foi executado porque a instalação das dependências não concluiu dentro do limite do ambiente. O pipeline do Cloudflare continuará fazendo a validação final de build no deployment.
+Observação:
+O build completo com dependências não foi finalizado no ambiente de preparação porque a instalação npm excedeu o tempo disponível. O pipeline do Cloudflare fará a validação final de dependências, Vite e TypeScript no deploy.

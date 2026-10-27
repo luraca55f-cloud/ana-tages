@@ -43,6 +43,7 @@ import { AuthGate, useAuth } from "../components/auth/AuthGate";
 import { FinanceDashboardMetrics, FinancePage as FinancePageV2, type FinanceTab } from "../features/finance/FinancePage";
 import { ServiceWorkPage } from "../features/service-work/ServiceWorkPage";
 import { UsageMonitorPage } from "../features/usage-monitor/UsageMonitorPage";
+import { TestCenterPage } from "../features/test-center/TestCenterPage";
 import { paymentMethodLabels } from "../features/finance/documents";
 import type { PaymentMethod } from "../features/finance/types";
 import {
@@ -127,7 +128,7 @@ function RoleAwareApp() {
   return <ConsultorioApp />;
 }
 
-type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Prestação de Serviço" | "Relatórios" | "Materiais" | "Uso Supabase" | "Configurações";
+type ModuleKey = "Dashboard" | "Agenda" | "Pacientes" | "Sessões" | "Financeiro" | "Prestação de Serviço" | "Relatórios" | "Materiais" | "Central de Testes" | "Uso Supabase" | "Configurações";
 type QuickAction = "session" | "expense" | "revenue" | "patient";
 
 type PatientView = PatientRow & {
@@ -147,6 +148,7 @@ const navItems: Array<[ModuleKey, typeof LayoutDashboard]> = [
   ["Prestação de Serviço", BriefcaseBusiness],
   ["Relatórios", FileBarChart],
   ["Materiais", FileText],
+  ["Central de Testes", ShieldCheck],
   ["Uso Supabase", Database],
   ["Configurações", Settings],
 ];
@@ -501,7 +503,7 @@ function ConsultorioApp() {
           <div><p className="text-sm font-semibold">{isTestMode ? "Perfil de teste" : "Anna Karina Dias"}</p><p className="text-[10px] text-muted-foreground">{isTestMode ? "Homologação local" : "Gestão do consultório"}</p></div>
         </button>
         <nav className="mt-8 space-y-1.5">
-          {navItems.filter(([label]) => label !== "Uso Supabase" || isTestMode).map(([label, Icon]) => <button key={label} onClick={() => openModule(label)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${activeModule === label ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}><Icon className="size-4" />{label}</button>)}
+          {navItems.filter(([label]) => !["Uso Supabase", "Central de Testes"].includes(label) || isTestMode).map(([label, Icon]) => <button key={label} onClick={() => openModule(label)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-medium transition-colors ${activeModule === label ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}><Icon className="size-4" />{label}</button>)}
         </nav>
         <div className="mt-auto rounded-2xl border border-border bg-background/55 p-3 text-[10px] leading-4 text-muted-foreground"><ShieldCheck className="mb-2 size-4 text-secondary" />Prontuários com TOTP e conteúdo clínico criptografado no navegador.</div>
       </aside>
@@ -514,7 +516,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.40 • sem gravação no Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.41 • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
@@ -532,6 +534,7 @@ function ConsultorioApp() {
           {activeModule === "Prestação de Serviço" && <ServiceWorkPage />}
           {activeModule === "Relatórios" && <ReportsPage />}
           {activeModule === "Materiais" && <MaterialsPage />}
+          {activeModule === "Central de Testes" && isTestMode && <TestCenterPage />}
           {activeModule === "Uso Supabase" && isTestMode && <UsageMonitorPage embedded />}
           {activeModule === "Configurações" && <SettingsPage settings={settings} vaultKey={vaultKey} onVaultKey={setVaultKey} onSettings={(value) => setSettings(value)} />}
         </main>

@@ -383,7 +383,7 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - SQL novo: NÃO.
 - Commit sugerido: `Organizar biblioteca de materiais do consultório v2.0.38`.
 
-## Atualização v2.0.40 — edição administrativa e financeiro editável
+## Atualização v2.0.41 — edição administrativa e financeiro editável
 
 - Base funcional: v2.0.38. Esta atualização não incorpora alterações abandonadas de autenticação.
 - Financeiro: ao selecionar um mês anterior, `Nova receita` e `Nova despesa` passam a abrir com uma data daquele mês como padrão; o usuário ainda pode escolher qualquer data manualmente.
@@ -393,5 +393,18 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Despesas: criação/edição mostra erro real devolvido pelo backend e deixa claro que competências de meses anteriores são aceitas. Ações `Editar` e `Excluir` permanecem nas telas financeiras.
 - Pacientes: ações de `Editar` e `Arquivar` ficaram explícitas nos cards e no detalhe do paciente. Arquivar preserva prontuário e histórico financeiro.
 - Sessões: cada sessão no detalhe do paciente ganhou `Editar sessão`; a tabela de Sessões também usa botão textual de edição.
-- SQL incremental: `SQL/14 - Edicao administrativa e financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.40.sql`.
+- SQL incremental: `SQL/14 - Edicao administrativa e financeiro/SQL_ATUALIZACAO_ANA_TAGES_v2.0.41.sql`.
 - O SQL adiciona apenas as RPCs `update_manual_revenue` e `delete_manual_revenue`; não altera dados existentes e não deve ser substituído por migrations antigas.
+
+
+## v2.0.41 — Central de Testes e anti-pausa
+
+- Novo módulo **Central de Testes**, visível somente no perfil de homologação.
+- Um clique executa smoke tests locais de pacientes, sessões, cobrança, parcelamento, pacotes, receitas, despesas, materiais, prontuário, prestação de serviço, relatórios e configurações.
+- O banco local do perfil de teste é restaurado ao final; os testes não alteram dados reais da Ana.
+- A Central também consulta o Supabase real **somente em leitura** e confere tabelas/funções essenciais, ajudando a detectar SQL faltando ou projeto indisponível antes da Ana usar.
+- O Worker ganhou Cron Trigger de anti-pausa (`17 3,11,19 * * *`, UTC), executando três consultas leves por dia.
+- Há botão **Testar agora** na Central para validar a consulta de atividade manualmente.
+- O anti-pausa reduz o risco de pausa no plano Free, mas não é garantia; plano pago continua sendo a única forma garantida de não sofrer pausa automática por inatividade.
+- SQL novo: **NÃO**. SQL a rodar nesta versão: **NENHUM**.
+- Commit sugerido: `Adicionar Central de Testes e anti-pausa v2.0.41`.

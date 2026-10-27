@@ -1,0 +1,6 @@
+ANA TAGES v2.0.41
+
+SQL A RODAR: NENHUM.
+
+A Central de Testes usa o perfil local de homologação e consultas somente leitura pela Management API.
+O anti-pausa é executado pelo Cron Trigger do Cloudflare Worker e não exige função, tabela ou migration nova no Supabase.
