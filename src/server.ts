@@ -488,7 +488,15 @@ async function handleTestCenterApi(request: Request, env: Env): Promise<Response
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_expense') as fn_create_expense,
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='update_expense') as fn_update_expense,
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='delete_expense') as fn_delete_expense,
-          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_service_work_entry') as fn_create_service_work_entry
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_service_work_entry') as fn_create_service_work_entry,
+          exists(
+            select 1
+            from pg_catalog.pg_proc p
+            join pg_catalog.pg_namespace n on n.oid=p.pronamespace
+            where n.nspname='public'
+              and p.proname='grant_clinical_access'
+              and pg_catalog.pg_get_functiondef(p.oid) ilike '%v_grant_marker%'
+          ) as fn_grant_clinical_access_session
       `;
       const payload = await managementApiJson(env, "/database/query/read-only", { method: "POST", body: JSON.stringify({ query }) });
       const row = firstResultRow(payload);
@@ -500,6 +508,7 @@ async function handleTestCenterApi(request: Request, env: Env): Promise<Response
         { id: "finance-schema", label: "Financeiro e parcelamentos", keys: ["billing_entries", "expenses", "package_plans"], okDetail: "Tabelas financeiras essenciais encontradas." },
         { id: "finance-routines", label: "Funções financeiras de edição, pacote e cobrança", keys: ["fn_ensure_appointment_billings", "fn_save_appointment_billing_plan", "fn_save_patient_package_plan_v2", "fn_cancel_patient_package_plan_v2", "fn_create_manual_revenue", "fn_update_manual_revenue", "fn_delete_manual_revenue", "fn_create_expense", "fn_update_expense", "fn_delete_expense"], okDetail: "Funções financeiras esperadas estão instaladas." },
         { id: "service-work", label: "Prestação de Serviço", keys: ["service_work_entries", "fn_create_service_work_entry"], okDetail: "Estrutura de prestação de serviço encontrada." },
+        { id: "clinical-access", label: "Acesso ao prontuário sem loop de código", keys: ["fn_grant_clinical_access_session"], okDetail: "Rotina de acesso clínico v2.0.43 instalada." },
       ];
 
       const checks = groups.map((group) => {

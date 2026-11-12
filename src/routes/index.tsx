@@ -536,7 +536,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.42 • sem gravação no Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.43 • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
@@ -741,7 +741,7 @@ function PatientsPage({ patients, appointments, services, onNew, onEdit, onRecor
       </div>
       {visible.length === 0 && <Empty text="Nenhum paciente encontrado." />}
     </section>
-    <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Cada abertura exige código TOTP. O conteúdo das evoluções é criptografado no navegador antes de ser armazenado.</p></div></div></section>
+    <section className="dashboard-card mt-4 rounded-2xl p-5"><div className="flex items-start gap-3"><span className="grid size-10 place-items-center rounded-xl bg-accent"><BookOpenText className="size-5" /></span><div><h2 className="font-display text-lg">Prontuário protegido</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">O acesso usa a sessão protegida pelo Google Authenticator e o cofre clínico. Não é necessário repetir o código a cada abertura enquanto a sessão MFA continuar válida.</p></div></div></section>
     {selected && <PatientDetailsModal patient={selected} appointments={patientAppointments(selected.id)} onClose={() => setSelected(null)} onEdit={() => { setSelected(null); onEdit(selected); }} onArchive={async () => { if (confirm(`Arquivar ${selected.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(selected.id); setSelected(null); await onChanged(); } }} onRecord={() => { setSelected(null); onRecord(selected); }} onNewSession={() => { setSelected(null); setSessionPatient(selected); }} onEditSession={(appointment) => { setSelected(null); setEditingSession(appointment); }} />}
     {sessionPatient && <AppointmentModal patients={patients} services={services} appointment={null} defaultDate={isoDateLocal()} defaultPatientId={sessionPatient.id} defaultServiceKind="session" onClose={() => setSessionPatient(null)} onSaved={async () => { setSessionPatient(null); await onChanged(); }} />}
     {editingSession && <AppointmentModal patients={patients} services={services} appointment={editingSession} defaultDate={editingSession.scheduled_at.slice(0, 10)} onClose={() => setEditingSession(null)} onSaved={async () => { setEditingSession(null); await onChanged(); }} />}
@@ -1049,7 +1049,7 @@ function SettingsPage({ settings, vaultKey, onVaultKey, onSettings }: { settings
       <ServiceCatalogSettings settings={settings} onSettings={onSettings} />
       <MfaSettings />
       <VaultSettings settings={settings} vaultKey={vaultKey} onVaultKey={onVaultKey} onSettings={onSettings} />
-      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">Controle de acesso:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> cada abertura de prontuário exige um novo código do aplicativo autenticador.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o sistema armazena somente o conteúdo cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha não é salva no sistema. A recuperação principal usa o e-mail cadastrado + Google Authenticator; o código separado permanece como contingência.</p></div></SettingsCard>
+      <SettingsCard title="Proteção implementada" description="Como os dados clínicos são protegidos."><div className="space-y-3 text-xs text-muted-foreground"><p><strong className="text-foreground">Controle de acesso:</strong> o usuário autenticado acessa somente os próprios registros.</p><p><strong className="text-foreground">TOTP:</strong> o Google Authenticator protege a sessão. Enquanto ela permanecer em AAL2, o prontuário não solicita o mesmo código novamente.</p><p><strong className="text-foreground">Criptografia:</strong> evoluções são cifradas com AES-GCM no navegador e o sistema armazena somente o conteúdo cifrado.</p><p><strong className="text-foreground">Cofre:</strong> a senha não é salva no sistema. A recuperação principal usa o e-mail cadastrado + Google Authenticator; o código separado permanece como contingência.</p></div></SettingsCard>
     </div>
     {message && <p className="mt-4 text-xs text-primary">{message}</p>}
   </>;
@@ -1117,7 +1117,7 @@ function MfaSettings() {
   };
   const qrSrc = qr.startsWith("<svg") ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qr)}` : qr;
   if (isTestMode) return <SettingsCard title="Google Authenticator / 2FA" description="O perfil de teste não usa Supabase Auth."><div className="rounded-xl border border-border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">A autenticação do seu perfil de homologação é validada pelo Cloudflare. O Google Authenticator da conta real da Ana permanece totalmente separado.</div></SettingsCard>;
-  return <SettingsCard title="Google Authenticator / 2FA" description="Obrigatório para abrir qualquer prontuário.">{verified ? <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs"><div className="flex items-center gap-2 font-medium text-primary"><ShieldCheck className="size-4" /> Autenticador ativo</div><p className="mt-2 text-muted-foreground">Cada prontuário solicitará um novo código de 6 dígitos.</p></div> : <div><Button variant="dashboard" size="sm" onClick={() => void startEnroll()}>Configurar autenticador</Button>{qr && <div className="mt-4"><img src={qrSrc} alt="QR Code do autenticador" className="size-44 rounded-xl bg-white p-2" /><p className="mt-2 break-all text-[10px] text-muted-foreground">Chave manual: {secret}</p><div className="mt-3 flex gap-2"><input inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-center font-mono tracking-[0.3em]" placeholder="000000" /><Button variant="dashboard" onClick={() => void confirmEnroll()}>Confirmar</Button></div></div>}</div>}{message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}</SettingsCard>;
+  return <SettingsCard title="Google Authenticator / 2FA" description="Protege o login e a sessão clínica.">{verified ? <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-xs"><div className="flex items-center gap-2 font-medium text-primary"><ShieldCheck className="size-4" /> Autenticador ativo</div><p className="mt-2 text-muted-foreground">Após confirmar o autenticador no login, a sessão segura é reutilizada para abrir prontuários enquanto permanecer válida.</p></div> : <div><Button variant="dashboard" size="sm" onClick={() => void startEnroll()}>Configurar autenticador</Button>{qr && <div className="mt-4"><img src={qrSrc} alt="QR Code do autenticador" className="size-44 rounded-xl bg-white p-2" /><p className="mt-2 break-all text-[10px] text-muted-foreground">Chave manual: {secret}</p><div className="mt-3 flex gap-2"><input inputMode="numeric" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} className="h-10 flex-1 rounded-xl border border-border bg-background px-3 text-center font-mono tracking-[0.3em]" placeholder="000000" /><Button variant="dashboard" onClick={() => void confirmEnroll()}>Confirmar</Button></div></div>}</div>}{message && <p className="mt-3 text-[11px] text-muted-foreground">{message}</p>}</SettingsCard>;
 }
 
 function VaultSettings({ settings, vaultKey, onVaultKey, onSettings }: { settings: AppSettingsRow | null; vaultKey: CryptoKey | null; onVaultKey: (k: CryptoKey | null) => void; onSettings: (s: AppSettingsRow) => void }) {
@@ -1660,7 +1660,16 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
     <div className="grid gap-4 p-5 sm:grid-cols-2">
       <FieldEdit label="Nome completo" value={name} onChange={setName} />
       <FieldEdit label="CPF" value={cpf} onChange={(value) => setCpf(formatCpf(value))} />
-      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data de nascimento</span><input type="date" max={isoDateLocal()} value={birthDate} onChange={(e)=>setBirthDate(e.target.value)} className="input-finance" />{birthDate && <span className="mt-1 block text-[9px] font-medium text-primary">{patientCareProfile(birthDate).age} anos • {patientCareProfile(birthDate).label}</span>}</label>
+      <div className="sm:col-span-2 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div><p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Nascimento e tipo de atendimento</p><p className="mt-1 text-[10px] text-muted-foreground">Informe a data de nascimento. A idade e o tipo infantil/adulto são calculados automaticamente.</p></div>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data de nascimento</span><input type="date" max={isoDateLocal()} value={birthDate} onChange={(e)=>setBirthDate(e.target.value)} className="input-finance" /></label>
+          <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Idade</span><input readOnly value={patientCareProfile(birthDate).age != null ? `${patientCareProfile(birthDate).age} anos` : ""} placeholder="Automática" className="input-finance bg-muted/35" /></label>
+          <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Tipo de atendimento</span><input readOnly value={patientCareProfile(birthDate).age != null ? patientCareProfile(birthDate).label.replace("Atendimento ", "") : ""} placeholder="Definido pela idade" className="input-finance bg-muted/35" /></label>
+        </div>
+      </div>
       <FieldEdit label="WhatsApp" value={phone} onChange={setPhone} />
       <FieldEdit label="E-mail" value={email} onChange={setEmail} />
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={active ? "active":"paused"} onChange={(e)=>setActive(e.target.value === "active")} className="input-finance"><option value="active">Ativo</option><option value="paused">Pausado</option></select></label>
@@ -1982,13 +1991,33 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onSettings, o
       return;
     }
     if(!supabase){setPhase("blocked");setError("Serviço de dados indisponível.");return;}
+    if(!legacyConfigured&&!recoverableConfigured){setPhase("blocked");setError("Crie o cofre clínico em Configurações antes de abrir prontuários.");return;}
+
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assuranceError) { setPhase("blocked"); setError("Não foi possível validar a sessão protegida."); return; }
+
+    // O login da conta clínica já faz o step-up para AAL2. Reutilizamos essa sessão
+    // para o prontuário em vez de exigir outro TOTP e cair no loop de desafio.
+    if (assurance.currentLevel === "aal2") {
+      try {
+        await grantClinicalAccess(patient.id);
+        setGranted(true);
+        if (vaultKey) { onVerified(); return; }
+        setPhase("vault");
+      } catch (cause) {
+        console.error("Clinical access grant failed", cause);
+        setPhase("blocked");
+        setError("A sessão segura não conseguiu liberar o prontuário. Saia e entre novamente para renovar o acesso.");
+      }
+      return;
+    }
+
     const {data,error}=await supabase.auth.mfa.listFactors();
     if(error){setPhase("blocked");setError("Não foi possível verificar o autenticador.");return;}
     const factor=data.totp.find((x)=>x.status==="verified");
     if(!factor){setPhase("blocked");setError("Configure o Google Authenticator em Configurações antes de abrir prontuários.");return;}
-    if(!legacyConfigured&&!recoverableConfigured){setPhase("blocked");setError("Crie o cofre clínico em Configurações antes de abrir prontuários.");return;}
     setFactorId(factor.id);setPhase("totp");
-  })();},[legacyConfigured,recoverableConfigured,isTestMode,vaultKey,onVerified]);
+  })();},[legacyConfigured,recoverableConfigured,isTestMode,vaultKey,onVerified,patient.id]);
 
   const closeSecure=()=>{
     if(granted) void revokeClinicalAccess(patient.id).catch(()=>undefined);
@@ -2003,16 +2032,19 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onSettings, o
   const verifyTotp=async()=>{
     if(!supabase||!factorId||!/^[0-9]{6}$/.test(code)){setError("Informe o código de 6 dígitos.");return;}
     setError("");
+    setPhase("checking");
     const {error:ve}=await supabase.auth.mfa.challengeAndVerify({factorId,code});
     setCode("");
-    if(ve){setError("Código inválido ou expirado.");return;}
+    if(ve){setPhase("totp");setError("Código inválido ou expirado.");return;}
     const { error: refreshError } = await supabase.auth.refreshSession();
-    if (refreshError) { setError("Não foi possível atualizar a sessão segura. Tente novamente."); return; }
+    if (refreshError) { setPhase("totp"); setError("Não foi possível atualizar a sessão segura. Tente novamente."); return; }
     try {
       await grantClinicalAccess(patient.id);
       setGranted(true);
-    } catch {
-      setError("Não foi possível liberar o prontuário. Aguarde o próximo código do autenticador e tente novamente.");
+    } catch (cause) {
+      console.error("Clinical access grant failed after MFA", cause);
+      setPhase("blocked");
+      setError("O código foi aceito, mas o prontuário não pôde ser liberado. Saia e entre novamente para renovar a sessão.");
       return;
     }
     if(vaultKey){onVerified();return;}
@@ -2061,7 +2093,7 @@ function TwoFactorModal({ patient, settings, vaultKey, onVaultKey, onSettings, o
     onVerified();
   };
 
-  return <ModalShell onClose={closeSecure}><div className="p-6"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span><Button variant="ghost" size="icon" onClick={closeSecure}><X /></Button></div><h2 className="mt-5 font-display text-xl">Prontuário — {patient.full_name}</h2>{phase==="checking"&&<p className="mt-3 text-sm text-muted-foreground">Verificando proteção...</p>}{phase==="blocked"&&<div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive">{error}</div>}{phase==="totp"&&<><p className="mt-2 text-sm text-muted-foreground">Digite o código atual do Google Authenticator. Cada abertura exige uma nova verificação.</p><input autoFocus inputMode="numeric" maxLength={6} value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} onKeyDown={(e)=>{if(e.key==="Enter")void verifyTotp();}} className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]" placeholder="000000" /><Button variant="dashboard" className="mt-4 w-full" disabled={code.length!==6} onClick={()=>void verifyTotp()}>Verificar código</Button></>}{phase==="vault"&&<><p className="mt-2 text-sm text-muted-foreground">Desbloqueie o cofre clínico. A senha permanece somente na memória desta aba e não é enviada ao servidor.</p><input autoFocus type="password" value={pass} onChange={(e)=>setPass(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter")void unlock();}} className="mt-5 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" autoComplete="off" /><Button variant="dashboard" className="mt-4 w-full" disabled={!pass} onClick={()=>void unlock()}>Desbloquear cofre</Button><Button variant="ghost" className="mt-2 w-full" onClick={goToRecovery}>Esqueci a senha do cofre</Button></>}{phase==="recovery"&&<><p className="mt-2 text-sm text-muted-foreground">O cofre foi atualizado para permitir redefinição de senha. Guarde este código fora do sistema antes de continuar.</p><div className="mt-4 rounded-xl border border-border bg-muted/40 p-4"><p className="break-all font-mono text-sm font-semibold">{recoveryCode}</p><Button variant="quiet" size="sm" className="mt-3" onClick={()=>{void navigator.clipboard.writeText(recoveryCode);}}>Copiar código</Button></div><Button variant="dashboard" className="mt-4 w-full" onClick={onVerified}>Já guardei, abrir prontuário</Button></>}{error&&phase!=="blocked"&&<p className="mt-3 text-xs text-destructive">{error}</p>}</div></ModalShell>;
+  return <ModalShell onClose={closeSecure}><div className="p-6"><div className="flex items-start justify-between"><span className="grid size-12 place-items-center rounded-2xl bg-accent"><LockKeyhole className="size-5" /></span><Button variant="ghost" size="icon" onClick={closeSecure}><X /></Button></div><h2 className="mt-5 font-display text-xl">Prontuário — {patient.full_name}</h2>{phase==="checking"&&<p className="mt-3 text-sm text-muted-foreground">Verificando proteção...</p>}{phase==="blocked"&&<div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-xs text-destructive">{error}</div>}{phase==="totp"&&<><p className="mt-2 text-sm text-muted-foreground">Sua sessão precisa ser renovada. Digite o código atual do Google Authenticator uma vez para continuar.</p><input autoFocus inputMode="numeric" maxLength={6} value={code} onChange={(e)=>setCode(e.target.value.replace(/\D/g,"").slice(0,6))} onKeyDown={(e)=>{if(e.key==="Enter")void verifyTotp();}} className="mt-5 h-12 w-full rounded-xl border border-border bg-background px-4 text-center font-mono text-xl tracking-[0.45em]" placeholder="000000" /><Button variant="dashboard" className="mt-4 w-full" disabled={code.length!==6} onClick={()=>void verifyTotp()}>Verificar código</Button></>}{phase==="vault"&&<><p className="mt-2 text-sm text-muted-foreground">Desbloqueie o cofre clínico. A senha permanece somente na memória desta aba e não é enviada ao servidor.</p><input autoFocus type="password" value={pass} onChange={(e)=>setPass(e.target.value)} onKeyDown={(e)=>{if(e.key==="Enter")void unlock();}} className="mt-5 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm" placeholder="Senha do cofre" autoComplete="off" /><Button variant="dashboard" className="mt-4 w-full" disabled={!pass} onClick={()=>void unlock()}>Desbloquear cofre</Button><Button variant="ghost" className="mt-2 w-full" onClick={goToRecovery}>Esqueci a senha do cofre</Button></>}{phase==="recovery"&&<><p className="mt-2 text-sm text-muted-foreground">O cofre foi atualizado para permitir redefinição de senha. Guarde este código fora do sistema antes de continuar.</p><div className="mt-4 rounded-xl border border-border bg-muted/40 p-4"><p className="break-all font-mono text-sm font-semibold">{recoveryCode}</p><Button variant="quiet" size="sm" className="mt-3" onClick={()=>{void navigator.clipboard.writeText(recoveryCode);}}>Copiar código</Button></div><Button variant="dashboard" className="mt-4 w-full" onClick={onVerified}>Já guardei, abrir prontuário</Button></>}{error&&phase!=="blocked"&&<p className="mt-3 text-xs text-destructive">{error}</p>}</div></ModalShell>;
 }
 
 function PatientRecordModal({ patient, vaultKey, onClose }: { patient: PatientView; vaultKey: CryptoKey; onClose: () => void }) {
