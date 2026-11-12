@@ -418,3 +418,11 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - Financeiro: `loadFinanceYear(year)` agrupa faturado por competência, recebido por `received_at` e despesas por competência.
 - Central de Testes verifica `birth_date` e as novas RPCs no banco real, além de smoke test local de pacote recebido/cancelado.
 - SQL a executar: `SQL_ATUALIZACAO_ANA_TAGES_v2.0.42.sql`.
+
+### Correção de build da v2.0.42
+
+- Corrigido `src/lib/test-data.ts`: o fallback de `birth_date` para dados locais antigos passou de `{ birth_date: null, ...patient }` para `{ ...patient, birth_date: patient.birth_date ?? null }`.
+- Motivo: o Cloudflare/TypeScript acusava TS2783 porque `birth_date` podia ser especificado duas vezes no mesmo objeto.
+- Esta correção não altera regra funcional nem banco de dados.
+- SQL novo: **NÃO**. Se `SQL_ATUALIZACAO_ANA_TAGES_v2.0.42.sql` já foi executado com sucesso, não executar novamente.
+- Commit sugerido: `Corrigir build TypeScript da v2.0.42`.

@@ -99,7 +99,7 @@ export function readTestDb(): TestDb {
       ...emptyDb(),
       ...parsed,
       version: 1,
-      patients: Array.isArray(parsed.patients) ? parsed.patients.map((patient) => ({ birth_date: null, ...patient })) as PatientRow[] : [],
+      patients: Array.isArray(parsed.patients) ? parsed.patients.map((patient) => ({ ...patient, birth_date: patient.birth_date ?? null })) as PatientRow[] : [],
       appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
       billings: Array.isArray(parsed.billings) ? parsed.billings : [],
       expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
