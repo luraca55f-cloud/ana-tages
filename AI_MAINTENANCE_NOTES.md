@@ -408,3 +408,13 @@ Nunca chamar uma versão de “stable” sem ter evidência real do pipeline/bui
 - O anti-pausa reduz o risco de pausa no plano Free, mas não é garantia; plano pago continua sendo a única forma garantida de não sofrer pausa automática por inatividade.
 - SQL novo: **NÃO**. SQL a rodar nesta versão: **NENHUM**.
 - Commit sugerido: `Adicionar Central de Testes e anti-pausa v2.0.41`.
+
+## v2.0.42 — nascimento, pacotes e filtros financeiros
+
+- `patients.birth_date` é opcional e serve de base para idade/perfil infantil-adulto calculados no frontend; não armazenar idade fixa.
+- Não foram inventados formatos clínicos infantil/adulto. A UI apenas classifica automaticamente por idade até que a profissional forneça os campos exatos de cada formato.
+- Nova RPC `save_patient_package_plan_v2` aceita `pending|paid`, data e forma de recebimento, preservando idempotência e histórico.
+- Nova RPC `cancel_patient_package_plan_v2` preserva pagos, converte parcial recebido em histórico pago pelo valor recebido e cancela somente saldo pendente.
+- Financeiro: `loadFinanceYear(year)` agrupa faturado por competência, recebido por `received_at` e despesas por competência.
+- Central de Testes verifica `birth_date` e as novas RPCs no banco real, além de smoke test local de pacote recebido/cancelado.
+- SQL a executar: `SQL_ATUALIZACAO_ANA_TAGES_v2.0.42.sql`.

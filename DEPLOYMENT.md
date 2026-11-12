@@ -190,3 +190,13 @@ O SQL 13 é incremental: não zera pacientes, sessões, cobranças, pacotes ou p
 - O anti-pausa reduz o risco de pausa no plano Free, mas não é garantia; plano pago continua sendo a única forma garantida de não sofrer pausa automática por inatividade.
 - SQL novo: **NÃO**. SQL a rodar nesta versão: **NENHUM**.
 - Commit sugerido: `Adicionar Central de Testes e anti-pausa v2.0.41`.
+
+## Atualização v2.0.42
+
+1. No Supabase SQL Editor, executar SOMENTE:
+   `SQL/16 - Nascimento pacotes e filtros financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.42.sql`
+2. Confirmar `Success`.
+3. Substituir os arquivos do repositório preservando `.git`.
+4. Commit sugerido: `Adicionar nascimento, pacotes e resumo financeiro v2.0.42`.
+5. Push para `main` e aguardar deployment `Success` no Cloudflare.
+6. No perfil de teste, rodar `Central de Testes` antes de liberar para a Ana.

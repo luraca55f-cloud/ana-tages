@@ -8,7 +8,7 @@ import type {
   PatientRow,
   ReportsBundle,
 } from "../features/clinic/types";
-import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, PaymentMethod } from "../features/finance/types";
+import type { BillingEntry, ExpenseEntry, FinanceBundle, FinanceYearMonth, PatientBilling, PaymentMethod } from "../features/finance/types";
 import type { ServiceWorkEntry, ServiceWorkEntryInput } from "../features/service-work/types";
 import { getTestEmail } from "./test-mode";
 
@@ -99,7 +99,7 @@ export function readTestDb(): TestDb {
       ...emptyDb(),
       ...parsed,
       version: 1,
-      patients: Array.isArray(parsed.patients) ? parsed.patients : [],
+      patients: Array.isArray(parsed.patients) ? parsed.patients.map((patient) => ({ birth_date: null, ...patient })) as PatientRow[] : [],
       appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
       billings: Array.isArray(parsed.billings) ? parsed.billings : [],
       expenses: Array.isArray(parsed.expenses) ? parsed.expenses : [],
@@ -272,6 +272,7 @@ export function testCreatePatient(input: Partial<PatientRow> & Pick<PatientRow, 
     cpf: normalizeCpf(input.cpf),
     phone: cleanText(input.phone, 40),
     email: cleanText(input.email, 254),
+    birth_date: input.birth_date ?? null,
     active: input.active ?? true,
     billing_model: billingModel,
     session_amount: billingModel === "session" && input.session_amount != null ? safeMoney(input.session_amount) : null,
@@ -299,6 +300,7 @@ export function testUpdatePatient(id: string, patch: Partial<PatientRow>) {
   if (patch.cpf !== undefined) patient.cpf = normalizeCpf(patch.cpf);
   if (patch.phone !== undefined) patient.phone = cleanText(patch.phone, 40);
   if (patch.email !== undefined) patient.email = cleanText(patch.email, 254);
+  if (patch.birth_date !== undefined) patient.birth_date = patch.birth_date || null;
   if (patch.active !== undefined) patient.active = Boolean(patch.active);
   if (patch.billing_model !== undefined) patient.billing_model = patch.billing_model === "package" ? "package" : "session";
   if (patch.session_amount !== undefined) patient.session_amount = patch.session_amount == null ? null : safeMoney(patch.session_amount);
@@ -310,7 +312,7 @@ export function testUpdatePatient(id: string, patch: Partial<PatientRow>) {
   return patientWithPlan(db, patient);
 }
 
-export function testSavePatientPackagePlan(input: { patient_id: string; total_amount: number; payment_mode: "single" | "installments"; installment_count: number; first_due_date: string }) {
+export function testSavePatientPackagePlan(input: { patient_id: string; total_amount: number; payment_mode: "single" | "installments"; installment_count: number; first_due_date: string; initial_status?: "pending" | "paid"; received_at?: string | null; payment_method?: PaymentMethod | null }) {
   const db = readTestDb();
   const patient = db.patients.find((p) => p.id === input.patient_id && !p.archived_at);
   if (!patient) throw new Error("Paciente não encontrado");
@@ -323,7 +325,11 @@ export function testSavePatientPackagePlan(input: { patient_id: string; total_am
   if (previous) {
     previous.status = "cancelled";
     previous.updated_at = nowIso();
-    db.billings.forEach((entry) => { if (entry.package_plan_id === previous.id && entry.status === "pending") entry.status = "cancelled"; });
+    db.billings.forEach((entry) => {
+      if (entry.package_plan_id !== previous.id) return;
+      if (entry.status === "partial" && Number(entry.received_amount || 0) > 0) { entry.amount = Number(entry.received_amount); entry.status = "paid"; }
+      else if (entry.status === "pending" && Number(entry.received_amount || 0) <= 0) entry.status = "cancelled";
+    });
   }
 
   const planId = uuid();
@@ -356,10 +362,10 @@ export function testSavePatientPackagePlan(input: { patient_id: string; total_am
       issued_at: todayIso(),
       due_date: due,
       amount,
-      status: "pending",
-      received_amount: 0,
-      received_at: null,
-      payment_method: null,
+      status: input.initial_status === "paid" ? "paid" : "pending",
+      received_amount: input.initial_status === "paid" ? amount : 0,
+      received_at: input.initial_status === "paid" ? (input.received_at ?? todayIso()) : null,
+      payment_method: input.initial_status === "paid" ? (input.payment_method ?? "pix") : null,
       package_plan_id: planId,
       installment_number: index + 1,
       installment_count: count,
@@ -375,7 +381,11 @@ export function testCancelPatientPackagePlan(patientId: string) {
   if (plan) {
     plan.status = "cancelled";
     plan.updated_at = nowIso();
-    db.billings.forEach((entry) => { if (entry.package_plan_id === plan.id && entry.status === "pending") entry.status = "cancelled"; });
+    db.billings.forEach((entry) => {
+      if (entry.package_plan_id !== plan.id) return;
+      if (entry.status === "partial" && Number(entry.received_amount || 0) > 0) { entry.amount = Number(entry.received_amount); entry.status = "paid"; }
+      else if (entry.status === "pending" && Number(entry.received_amount || 0) <= 0) entry.status = "cancelled";
+    });
   }
   const patient = db.patients.find((p) => p.id === patientId);
   if (patient) {
@@ -437,7 +447,11 @@ export function testDeleteAppointment(id: string, cancelPackagePlan = false) {
     if (plan) {
       plan.status = "cancelled";
       plan.updated_at = nowIso();
-      db.billings.forEach((entry) => { if (entry.package_plan_id === plan.id && entry.status === "pending") entry.status = "cancelled"; });
+      db.billings.forEach((entry) => {
+      if (entry.package_plan_id !== plan.id) return;
+      if (entry.status === "partial" && Number(entry.received_amount || 0) > 0) { entry.amount = Number(entry.received_amount); entry.status = "paid"; }
+      else if (entry.status === "pending" && Number(entry.received_amount || 0) <= 0) entry.status = "cancelled";
+    });
     }
   }
   writeTestDb(db);
@@ -658,6 +672,26 @@ export function testLoadFinanceHistory(startDate: string, endExclusive: string) 
   };
 }
 
+export function testLoadFinanceYear(year: number): FinanceYearMonth[] {
+  const db = readTestDb();
+  reconcileAppointmentBillings(db);
+  writeTestDb(db);
+  const yearText = String(year);
+  return Array.from({ length: 12 }, (_, index) => {
+    const month = `${yearText}-${String(index + 1).padStart(2, "0")}`;
+    const billed = db.billings
+      .filter((entry) => entry.competence_date.slice(0, 7) === month && entry.status !== "cancelled")
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const received = db.billings
+      .filter((entry) => entry.received_at?.slice(0, 7) === month && Number(entry.received_amount || 0) > 0)
+      .reduce((sum, entry) => sum + Number(entry.received_amount || 0), 0);
+    const expenses = db.expenses
+      .filter((entry) => entry.competence_date.slice(0, 7) === month)
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    return { month, billed, received, expenses, result: received - expenses };
+  });
+}
+
 export function testLoadFinanceBundle(month: string, includeReceivableDetails = false): FinanceBundle {
   const db = readTestDb();
   reconcileAppointmentBillings(db);
@@ -786,7 +820,7 @@ export function testDeleteRevenueReceipt(id: string) {
 export function testUpdatePatientBilling(input: PatientBilling): void {
   if (input.billing_model === "package") {
     if (!input.package_first_due_date || input.package_amount == null) throw new Error("Informe valor total e primeiro vencimento do pacote/plano.");
-    testSavePatientPackagePlan({ patient_id: input.id, total_amount: input.package_amount, payment_mode: input.package_payment_mode === "installments" ? "installments" : "single", installment_count: input.package_installments ?? 1, first_due_date: input.package_first_due_date });
+    testSavePatientPackagePlan({ patient_id: input.id, total_amount: input.package_amount, payment_mode: input.package_payment_mode === "installments" ? "installments" : "single", installment_count: input.package_installments ?? 1, first_due_date: input.package_first_due_date, initial_status: input.package_initial_status === "paid" ? "paid" : "pending", received_at: input.package_initial_status === "paid" ? input.package_received_at ?? todayIso() : null, payment_method: input.package_initial_status === "paid" ? input.package_payment_method ?? "pix" : null });
     return;
   }
   testCancelPatientPackagePlan(input.id);

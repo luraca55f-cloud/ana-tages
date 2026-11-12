@@ -106,7 +106,7 @@ export async function listPatients() {
   const [patientsResult, plansResult] = await Promise.all([
     client
       .from("patients")
-      .select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at")
+      .select("id,full_name,cpf,phone,email,birth_date,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at")
       .is("archived_at", null)
       .order("full_name")
       .limit(MAX_ROWS),
@@ -146,6 +146,7 @@ export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow
     cpf: normalizeCpf(input.cpf),
     phone: cleanText(input.phone, 40),
     email: cleanText(input.email, 254),
+    birth_date: input.birth_date ?? null,
     active: input.active ?? true,
     billing_model: billingModel,
     session_amount: billingModel === "session" && input.session_amount != null ? safeMoney(input.session_amount) : null,
@@ -153,10 +154,10 @@ export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow
     package_timing: null,
     billing_day: null,
     notes_admin: cleanText(input.notes_admin, 4000),
-  }).select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
+  }).select("id,full_name,cpf,phone,email,birth_date,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
   if (error) {
     if ((error as { code?: string }).code === "23505") {
-      const existing = await client.from("patients").select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").eq("client_request_id", clientRequestId).maybeSingle();
+      const existing = await client.from("patients").select("id,full_name,cpf,phone,email,birth_date,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").eq("client_request_id", clientRequestId).maybeSingle();
       if (!existing.error && existing.data) return { ...existing.data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
     }
     throw error;
@@ -172,6 +173,7 @@ export async function updatePatient(id: string, patch: Partial<PatientRow>) {
   if (patch.cpf !== undefined) allowed["cpf"] = normalizeCpf(patch.cpf);
   if (patch.phone !== undefined) allowed["phone"] = cleanText(patch.phone, 40);
   if (patch.email !== undefined) allowed["email"] = cleanText(patch.email, 254);
+  if (patch.birth_date !== undefined) allowed["birth_date"] = patch.birth_date || null;
   if (patch.active !== undefined) allowed["active"] = Boolean(patch.active);
   if (patch.billing_model !== undefined) allowed["billing_model"] = patch.billing_model === "package" ? "package" : "session";
   if (patch.session_amount !== undefined) allowed["session_amount"] = patch.session_amount == null ? null : safeMoney(patch.session_amount);
@@ -179,7 +181,7 @@ export async function updatePatient(id: string, patch: Partial<PatientRow>) {
   if (patch.package_timing !== undefined) allowed["package_timing"] = patch.package_timing;
   if (patch.billing_day !== undefined) allowed["billing_day"] = patch.billing_day == null ? null : Math.max(1, Math.min(28, Number(patch.billing_day)));
   if (patch.notes_admin !== undefined) allowed["notes_admin"] = cleanText(patch.notes_admin, 4000);
-  const { data, error } = await client.from("patients").update(allowed).eq("id", id).is("archived_at", null).select("id,full_name,cpf,phone,email,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
+  const { data, error } = await client.from("patients").update(allowed).eq("id", id).is("archived_at", null).select("id,full_name,cpf,phone,email,birth_date,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
   if (error) throw error;
   return { ...data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
 }
@@ -192,6 +194,9 @@ export async function savePatientPackagePlan(input: {
   payment_mode: "single" | "installments";
   installment_count: number;
   first_due_date: string;
+  initial_status?: "pending" | "paid";
+  received_at?: string | null;
+  payment_method?: "pix" | "bank_transfer" | "cash" | "credit_card" | "debit_card" | "other" | null;
   client_request_id?: string;
 } ) {
   if (isTestMode()) return testSavePatientPackagePlan(input);
@@ -200,12 +205,17 @@ export async function savePatientPackagePlan(input: {
   if (total <= 0) throw new Error("Informe o valor total do pacote/plano.");
   const installmentCount = input.payment_mode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(input.installment_count)));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.first_due_date)) throw new Error("Informe a data do primeiro pagamento.");
-  const { data, error } = await client.rpc("save_patient_package_plan", {
+  const initialStatus = input.initial_status === "paid" ? "paid" : "pending";
+  if (initialStatus === "paid" && !input.received_at) throw new Error("Informe a data do recebimento do pacote.");
+  const { data, error } = await client.rpc("save_patient_package_plan_v2", {
     p_patient_id: input.patient_id,
     p_total_amount: total,
     p_payment_mode: input.payment_mode,
     p_installment_count: installmentCount,
     p_first_due_date: input.first_due_date,
+    p_initial_status: initialStatus,
+    p_received_at: initialStatus === "paid" ? input.received_at : null,
+    p_payment_method: initialStatus === "paid" ? input.payment_method ?? "pix" : null,
     p_client_request_id: input.client_request_id ?? crypto.randomUUID(),
   });
   if (error) throw error;
@@ -215,7 +225,7 @@ export async function savePatientPackagePlan(input: {
 export async function cancelPatientPackagePlan(patientId: string) {
   if (isTestMode()) return testCancelPatientPackagePlan(patientId);
   const client = requireSupabase();
-  const { error } = await client.rpc("cancel_patient_package_plan", { p_patient_id: patientId });
+  const { error } = await client.rpc("cancel_patient_package_plan_v2", { p_patient_id: patientId });
   if (error) throw error;
 }
 

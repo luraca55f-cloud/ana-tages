@@ -203,6 +203,26 @@ function dateLabel(value: string) {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" }).format(new Date(`${value.slice(0, 10)}T12:00:00`));
 }
 
+function patientAge(birthDate: string | null | undefined) {
+  if (!birthDate) return null;
+  const [yearText, monthText, dayText] = birthDate.slice(0, 10).split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (!year || !month || !day) return null;
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  const beforeBirthday = today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day);
+  if (beforeBirthday) age -= 1;
+  return age >= 0 && age < 130 ? age : null;
+}
+
+function patientCareProfile(birthDate: string | null | undefined) {
+  const age = patientAge(birthDate);
+  if (age == null) return { age: null, label: "Faixa etária não informada" };
+  return { age, label: age < 18 ? "Atendimento infantil" : "Atendimento adulto" };
+}
+
 function addMonthsClamped(dateText: string, monthOffset: number) {
   // `noUncheckedIndexedAccess` considera itens de `split()` potencialmente ausentes.
   // Os valores padrão mantêm a função tipada sem alterar a regra de vencimento mensal.
@@ -516,7 +536,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.41 • sem gravação no Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.42 • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
@@ -711,7 +731,7 @@ function PatientsPage({ patients, appointments, services, onNew, onEdit, onRecor
           return <article key={p.id} role="button" tabIndex={0} onClick={() => setSelected(p)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") setSelected(p); }} className="group cursor-pointer rounded-2xl border border-border bg-background/50 p-4 transition hover:-translate-y-0.5 hover:bg-card hover:shadow-sm">
             <div className="flex items-start gap-3">
               <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold">{p.initials}</span>
-              <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{p.full_name}</p><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{p.phone || p.email || "Sem contato informado"}</p></div><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></div></div>
+              <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{p.full_name}</p><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{p.phone || p.email || "Sem contato informado"}</p><p className="mt-1 text-[10px] font-medium text-primary">{patientCareProfile(p.birth_date).age != null ? `${patientCareProfile(p.birth_date).age} anos • ${patientCareProfile(p.birth_date).label}` : patientCareProfile(p.birth_date).label}</p></div><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></div></div>
             </div>
             <div className="mt-4 rounded-xl bg-card/70 p-3"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Contratação</p><p className="mt-1 text-xs font-medium">{p.billing_model === "package" ? `Pacote / plano ${p.package_amount ? money(p.package_amount) : ""}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</p><p className="mt-1 text-[10px] text-muted-foreground">{p.billing_model === "package" ? p.package_payment_mode === "installments" && p.package_installments ? `${p.package_installments}x • 1º vencimento ${p.package_first_due_date ? dateLabel(p.package_first_due_date) : "não informado"}` : "Pagamento à vista" : "Cobrança vinculada a cada atendimento"}</p></div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Sessões</p><p className="mt-1 text-sm font-semibold">{related.length}</p></div><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Realizadas</p><p className="mt-1 text-sm font-semibold">{completed}</p></div><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Próximas</p><p className="mt-1 text-sm font-semibold">{upcoming}</p></div></div>
@@ -737,8 +757,9 @@ function PatientDetailsModal({ patient, appointments, onClose, onEdit, onArchive
   return <ModalShell onClose={onClose} width="max-w-4xl">
     <ModalHeader title={patient.full_name} subtitle="Contratação, sessões vinculadas e acesso ao prontuário." onClose={onClose} />
     <div className="p-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-2xl border border-border bg-background/55 p-4"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Modelo contratado</p><p className="mt-2 text-sm font-semibold">{patient.billing_model === "package" ? "Pacote / plano" : "Por sessão"}</p><p className="mt-1 text-[10px] text-muted-foreground">{patient.billing_model === "package" ? `${patient.package_amount ? money(patient.package_amount) : "Valor não informado"}${patient.package_payment_mode === "installments" && patient.package_installments ? ` • ${patient.package_installments}x` : " • à vista"}` : patient.session_amount ? `${money(patient.session_amount)} por sessão` : "Valor não informado"}</p></div>
+        <MiniFeature icon={<Users />} title={patientCareProfile(patient.birth_date).label} text={patientCareProfile(patient.birth_date).age != null ? `${patientCareProfile(patient.birth_date).age} anos • nasc. ${dateLabel(patient.birth_date!)}` : "Cadastre a data de nascimento"} />
         <MiniFeature icon={<BadgeCheck />} title="Realizadas" text={String(completed)} />
         <MiniFeature icon={<CalendarDays />} title="Próximas" text={String(upcoming)} />
         <MiniFeature icon={<ClipboardList />} title="Faltas / canceladas" text={`${noShow} falta(s) • ${cancelled} cancelada(s)`} />
@@ -1527,6 +1548,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   const [cpf, setCpf] = useState(formatCpf(patient?.cpf));
   const [phone, setPhone] = useState(patient?.phone ?? "");
   const [email, setEmail] = useState(patient?.email ?? "");
+  const [birthDate, setBirthDate] = useState(patient?.birth_date ?? "");
   const [active, setActive] = useState(patient?.active ?? true);
   const [billing, setBilling] = useState<"session"|"package">(patient?.billing_model ?? "session");
   const [sessionAmount, setSessionAmount] = useState(patient?.session_amount?.toString().replace(".", ",") ?? "");
@@ -1534,6 +1556,9 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   const [packagePaymentMode, setPackagePaymentMode] = useState<"single" | "installments">(patient?.package_payment_mode ?? "single");
   const [packageInstallments, setPackageInstallments] = useState(patient?.package_installments ?? 2);
   const [packageFirstDueDate, setPackageFirstDueDate] = useState(patient?.package_first_due_date ?? isoDateLocal());
+  const [packageInitialStatus, setPackageInitialStatus] = useState<"pending" | "paid">("pending");
+  const [packageReceivedAt, setPackageReceivedAt] = useState(isoDateLocal());
+  const [packagePaymentMethod, setPackagePaymentMethod] = useState<PaymentMethod>("pix");
   const packagePlanRequestId = useRef(crypto.randomUUID()).current;
   const [notes, setNotes] = useState(patient?.notes_admin ?? "");
   const [scheduleNow, setScheduleNow] = useState(false);
@@ -1576,7 +1601,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
       // do pacote fica concentrada na RPC transacional; assim uma falha ao gerar parcelas não
       // deixa package_amount/modelo atualizados sem as respectivas cobranças em A receber.
       const basePatch = {
-        full_name:name.trim(), cpf:cpf||null, phone:phone.trim()||null, email:email.trim()||null, active,
+        full_name:name.trim(), cpf:cpf||null, phone:phone.trim()||null, email:email.trim()||null, birth_date:birthDate||null, active,
         notes_admin:notes.trim()||null,
       };
       const savedPatient = patient
@@ -1590,6 +1615,9 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
           payment_mode: packagePaymentMode,
           installment_count: effectiveInstallmentCount,
           first_due_date: packageFirstDueDate,
+          initial_status: packageInitialStatus,
+          received_at: packageInitialStatus === "paid" ? packageReceivedAt : null,
+          payment_method: packageInitialStatus === "paid" ? packagePaymentMethod : null,
           client_request_id: packagePlanRequestId,
         });
       } else {
@@ -1632,6 +1660,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
     <div className="grid gap-4 p-5 sm:grid-cols-2">
       <FieldEdit label="Nome completo" value={name} onChange={setName} />
       <FieldEdit label="CPF" value={cpf} onChange={(value) => setCpf(formatCpf(value))} />
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data de nascimento</span><input type="date" max={isoDateLocal()} value={birthDate} onChange={(e)=>setBirthDate(e.target.value)} className="input-finance" />{birthDate && <span className="mt-1 block text-[9px] font-medium text-primary">{patientCareProfile(birthDate).age} anos • {patientCareProfile(birthDate).label}</span>}</label>
       <FieldEdit label="WhatsApp" value={phone} onChange={setPhone} />
       <FieldEdit label="E-mail" value={email} onChange={setEmail} />
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={active ? "active":"paused"} onChange={(e)=>setActive(e.target.value === "active")} className="input-finance"><option value="active">Ativo</option><option value="paused">Pausado</option></select></label>
@@ -1642,10 +1671,12 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
         <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select value={packagePaymentMode} onChange={(e)=>setPackagePaymentMode(e.target.value as "single" | "installments")} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></label>
         {packagePaymentMode === "installments" && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Número de parcelas</span><input type="number" min={1} max={60} value={packageInstallments} onChange={(e)=>setPackageInstallments(Number(e.target.value))} className="input-finance" /></label>}
         <label><span className="mb-1.5 block text-[10px] text-muted-foreground">{packagePaymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}</span><input type="date" value={packageFirstDueDate} onChange={(e)=>setPackageFirstDueDate(e.target.value)} className="input-finance" /></label>
+        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Situação do pacote</span><select value={packageInitialStatus} onChange={(e)=>setPackageInitialStatus(e.target.value as "pending"|"paid")} className="input-finance"><option value="pending">A receber</option><option value="paid">Recebido</option></select></label>
+        {packageInitialStatus === "paid" && <><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data do recebimento</span><input type="date" value={packageReceivedAt} onChange={(e)=>setPackageReceivedAt(e.target.value)} className="input-finance" /></label><label><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select value={packagePaymentMethod} onChange={(e)=>setPackagePaymentMethod(e.target.value as PaymentMethod)} className="input-finance">{Object.entries(paymentMethodLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label></>}
         <div className="sm:col-span-2 rounded-2xl border border-border bg-background/45 p-4">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Cobranças que irão para A receber</p>
           {installmentPreview.length > 0 ? <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">{installmentPreview.map((installment)=><div key={installment.number} className="flex items-center justify-between gap-3 rounded-xl bg-card/70 px-3 py-2 text-xs"><span>{packagePaymentMode === "single" ? "Pagamento único" : `Parcela ${installment.number}/${installmentPreview.length}`} • {dateLabel(installment.dueDate)}</span><strong>{money(installment.amount)}</strong></div>)}</div> : <p className="mt-2 text-[10px] text-muted-foreground">Informe o valor e a data de pagamento para visualizar as cobranças.</p>}
-          <p className="mt-3 text-[10px] leading-4 text-muted-foreground">Ao salvar, cada parcela será criada automaticamente como cobrança pendente em A receber e ficará vinculada a este paciente e ao pacote/plano.</p>
+          <p className="mt-3 text-[10px] leading-4 text-muted-foreground">{packageInitialStatus === "paid" ? "Ao salvar, o pacote será registrado como recebido na data informada e aparecerá no mês correto do Financeiro." : "Ao salvar, cada parcela será criada automaticamente como cobrança pendente em A receber e ficará vinculada a este paciente e ao pacote/plano."}</p>
         </div>
       </>}
 
@@ -1665,7 +1696,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
 
       <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Observações administrativas</span><textarea maxLength={4000} value={notes} onChange={(e)=>setNotes(e.target.value)} className="min-h-20 w-full rounded-xl border border-border bg-background p-3 text-sm" /></label>
       {error&&<p className="text-xs text-destructive sm:col-span-2">{error}</p>}
-      <div className="flex justify-end gap-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || (billing === "session" ? !sessionAmount : !packageAmount)} onClick={() => void save()}>{saving ? "Salvando..." : "Salvar"}</Button></div>
+      <div className="flex flex-wrap justify-between gap-2 sm:col-span-2">{patient?.package_plan_id ? <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={saving} onClick={async()=>{if(!confirm(`Cancelar o pacote de ${patient.full_name}? Valores já recebidos serão preservados e cobranças pendentes serão canceladas.`))return;setSaving(true);setError("");try{await cancelPatientPackagePlan(patient.id);await onSaved();}catch(cause){setError(cause instanceof Error?cause.message:"Não foi possível cancelar o pacote.");}finally{setSaving(false);}}}><Trash2 /> Cancelar pacote</Button>:<span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" disabled={saving || !name.trim() || (billing === "session" ? !sessionAmount : !packageAmount)} onClick={() => void save()}>{saving ? "Salvando..." : "Salvar"}</Button></div></div>
     </div>
   </ModalShell>;
 }
@@ -1831,6 +1862,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, defaul
     <div className="grid gap-4 p-5 sm:grid-cols-2">
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
       <FieldEdit label="Paciente / cliente" value={name} onChange={setName} />
+      {selectedPatient?.birth_date && <div className="rounded-xl border border-border bg-background/45 px-3 py-2 text-xs sm:col-span-2"><span className="font-medium">{patientCareProfile(selectedPatient.birth_date).label}</span><span className="ml-2 text-muted-foreground">• {patientCareProfile(selectedPatient.birth_date).age} anos • nascimento {dateLabel(selectedPatient.birth_date)}</span></div>}
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>changeWhen(e.target.value)} className="input-finance" /></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={modality} onChange={(e)=>setModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label>
@@ -2083,7 +2115,7 @@ function PatientRecordModal({ patient, vaultKey, onClose }: { patient: PatientVi
     }
   };
 
-  return <ModalShell onClose={onClose} width="max-w-3xl"><ModalHeader title={`Prontuário — ${patient.full_name}`} subtitle="Acesso TOTP verificado • título e conteúdo clínico criptografados no navegador" onClose={onClose} /><div className="p-5"><div className="grid gap-3 sm:grid-cols-3"><MiniFeature icon={<CalendarDays />} title="Última sessão" text={patient.lastSession} /><MiniFeature icon={<CalendarDays />} title="Próxima sessão" text={patient.nextSession} /><MiniFeature icon={<ShieldCheck />} title="Segurança" text="AES-256-GCM + TOTP" /></div><div className="mt-6"><h3 className="font-display text-lg">Registrar evolução</h3><div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr]"><input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs" /><input value={title} maxLength={120} onChange={(e)=>setTitle(e.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Título" /></div><textarea value={note} maxLength={100000} onChange={(e)=>setNote(e.target.value)} className="mt-3 min-h-32 w-full rounded-2xl border border-border bg-background/60 p-3 text-sm" placeholder="Registre os pontos relevantes da sessão..." /><div className="mt-2 flex justify-end"><Button variant="dashboard" size="sm" disabled={!note.trim()||saving} onClick={()=>void add()}><Plus /> {saving?"Criptografando...":"Salvar evolução"}</Button></div></div><div className="mt-7"><h3 className="font-display text-lg">Histórico de evolução</h3>{error&&<p className="mt-3 text-xs text-destructive">{error}</p>}<div className="mt-4 space-y-3">{entries.map((entry)=><article key={entry.id} className="rounded-2xl border border-border bg-background/45 p-4"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold">{entry.title}</p><span className="text-[10px] text-muted-foreground">{dateLabel(entry.note_date)}</span></div><Button variant="ghost" size="icon" title="Arquivar evolução" onClick={async()=>{if(confirm("Arquivar esta evolução? O registro não será apagado fisicamente.")){try{await deleteClinicalNote(entry.id);await reload();}catch{setError("Não foi possível arquivar a evolução.");}}}}><Trash2 /></Button></div><p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{entry.text}</p></article>)}{entries.length===0&&<Empty text="Nenhuma evolução registrada." />}</div></div></div></ModalShell>;
+  return <ModalShell onClose={onClose} width="max-w-3xl"><ModalHeader title={`Prontuário — ${patient.full_name}`} subtitle="Acesso TOTP verificado • título e conteúdo clínico criptografados no navegador" onClose={onClose} /><div className="p-5"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><MiniFeature icon={<Users />} title={patientCareProfile(patient.birth_date).label} text={patientCareProfile(patient.birth_date).age != null ? `${patientCareProfile(patient.birth_date).age} anos • nasc. ${dateLabel(patient.birth_date!)}` : "Data de nascimento não informada"} /><MiniFeature icon={<CalendarDays />} title="Última sessão" text={patient.lastSession} /><MiniFeature icon={<CalendarDays />} title="Próxima sessão" text={patient.nextSession} /><MiniFeature icon={<ShieldCheck />} title="Segurança" text="AES-256-GCM + TOTP" /></div><div className="mt-6"><h3 className="font-display text-lg">Registrar evolução</h3><div className="mt-3 grid gap-3 sm:grid-cols-[160px_1fr]"><input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-xs" /><input value={title} maxLength={120} onChange={(e)=>setTitle(e.target.value)} className="h-10 rounded-xl border border-border bg-background px-3 text-sm" placeholder="Título" /></div><textarea value={note} maxLength={100000} onChange={(e)=>setNote(e.target.value)} className="mt-3 min-h-32 w-full rounded-2xl border border-border bg-background/60 p-3 text-sm" placeholder="Registre os pontos relevantes da sessão..." /><div className="mt-2 flex justify-end"><Button variant="dashboard" size="sm" disabled={!note.trim()||saving} onClick={()=>void add()}><Plus /> {saving?"Criptografando...":"Salvar evolução"}</Button></div></div><div className="mt-7"><h3 className="font-display text-lg">Histórico de evolução</h3>{error&&<p className="mt-3 text-xs text-destructive">{error}</p>}<div className="mt-4 space-y-3">{entries.map((entry)=><article key={entry.id} className="rounded-2xl border border-border bg-background/45 p-4"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold">{entry.title}</p><span className="text-[10px] text-muted-foreground">{dateLabel(entry.note_date)}</span></div><Button variant="ghost" size="icon" title="Arquivar evolução" onClick={async()=>{if(confirm("Arquivar esta evolução? O registro não será apagado fisicamente.")){try{await deleteClinicalNote(entry.id);await reload();}catch{setError("Não foi possível arquivar a evolução.");}}}}><Trash2 /></Button></div><p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{entry.text}</p></article>)}{entries.length===0&&<Empty text="Nenhuma evolução registrada." />}</div></div></div></ModalShell>;
 }
 
 function WeeklyAppointmentsChart({ appointments }: { appointments: AppointmentRow[] }) {

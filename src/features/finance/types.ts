@@ -50,12 +50,24 @@ export type PatientBilling = {
   package_payment_mode: PackagePaymentMode | null;
   package_installments: number | null;
   package_first_due_date: string | null;
+  package_initial_status?: "pending" | "paid";
+  package_received_at?: string | null;
+  package_payment_method?: PaymentMethod | null;
 };
 
 export type PatientIdentity = {
   id: string;
   full_name: string;
   cpf: string | null;
+};
+
+
+export type FinanceYearMonth = {
+  month: string;
+  billed: number;
+  received: number;
+  expenses: number;
+  result: number;
 };
 
 export type FinanceBundle = {

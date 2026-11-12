@@ -7,6 +7,7 @@ import {
   testDeleteRevenueReceipt,
   testDeleteManualRevenue,
   testLoadFinanceBundle,
+  testLoadFinanceYear,
   testMarkExpensePaid,
   testMarkRevenuePaid,
   testUpdateExpense,
@@ -14,7 +15,7 @@ import {
   testUpdateRevenueReceipt,
   testUpdateManualRevenue,
 } from "../../lib/test-data";
-import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, PaymentMethod, RevenueSource } from "./types";
+import type { BillingEntry, ExpenseEntry, FinanceBundle, FinanceYearMonth, PatientBilling, PaymentMethod, RevenueSource } from "./types";
 
 const MAX_ROWS = 1_000;
 
@@ -48,6 +49,31 @@ function cleanMoney(value: number) {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000) throw new Error("Valor inválido");
   return Math.round(amount * 100) / 100;
+}
+
+
+export async function loadFinanceYear(year: number): Promise<FinanceYearMonth[]> {
+  if (isTestMode()) return testLoadFinanceYear(year);
+  if (!supabase) throw new Error("Supabase não configurado");
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) throw new Error("Ano inválido");
+  const start = `${year}-01-01`;
+  const endExclusive = `${year + 1}-01-01`;
+  const billingFields = "competence_date,amount,status,received_amount,received_at";
+  const [billedResult, receivedResult, expensesResult] = await Promise.all([
+    supabase.from("billing_entries").select(billingFields).gte("competence_date", start).lt("competence_date", endExclusive).neq("status", "cancelled").limit(5000),
+    supabase.from("billing_entries").select(billingFields).gte("received_at", start).lt("received_at", endExclusive).gt("received_amount", 0).limit(5000),
+    supabase.from("expenses").select("competence_date,amount").gte("competence_date", start).lt("competence_date", endExclusive).limit(5000),
+  ]);
+  const firstError = billedResult.error ?? receivedResult.error ?? expensesResult.error;
+  if (firstError) throw firstError;
+  const rows = Array.from({ length: 12 }, (_, index) => {
+    const month = `${year}-${String(index + 1).padStart(2, "0")}`;
+    const billed = (billedResult.data ?? []).filter((entry) => String(entry.competence_date).slice(0, 7) === month).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    const received = (receivedResult.data ?? []).filter((entry) => String(entry.received_at ?? "").slice(0, 7) === month).reduce((sum, entry) => sum + Number(entry.received_amount || 0), 0);
+    const expenses = (expensesResult.data ?? []).filter((entry) => String(entry.competence_date).slice(0, 7) === month).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    return { month, billed, received, expenses, result: received - expenses };
+  });
+  return rows;
 }
 
 export async function loadFinanceBundle(month: string, includeReceivableDetails = false): Promise<FinanceBundle> {
@@ -299,19 +325,22 @@ export async function updatePatientBilling(input: PatientBilling): Promise<void>
     if (total <= 0 || !input.package_first_due_date) throw new Error("Informe valor total e primeiro vencimento do pacote/plano.");
     const paymentMode = input.package_payment_mode === "installments" ? "installments" : "single";
     const count = paymentMode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(Number(input.package_installments ?? 1))));
-    const planResult = await supabase.rpc("save_patient_package_plan", {
+    const planResult = await supabase.rpc("save_patient_package_plan_v2", {
       p_patient_id: input.id,
       p_total_amount: total,
       p_payment_mode: paymentMode,
       p_installment_count: count,
       p_first_due_date: input.package_first_due_date,
+      p_initial_status: input.package_initial_status === "paid" ? "paid" : "pending",
+      p_received_at: input.package_initial_status === "paid" ? input.package_received_at ?? null : null,
+      p_payment_method: input.package_initial_status === "paid" ? input.package_payment_method ?? "pix" : null,
       p_client_request_id: crypto.randomUUID(),
     });
     if (planResult.error) throw planResult.error;
     return;
   }
 
-  const cancelled = await supabase.rpc("cancel_patient_package_plan", { p_patient_id: input.id });
+  const cancelled = await supabase.rpc("cancel_patient_package_plan_v2", { p_patient_id: input.id });
   if (cancelled.error) throw cancelled.error;
   const { error } = await supabase.from("patients").update({
     billing_model: "session",

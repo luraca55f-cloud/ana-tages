@@ -1,0 +1,9 @@
+ANA TAGES v2.0.42
+
+SQL NOVO: SIM
+
+Execute somente:
+SQL_ATUALIZACAO_ANA_TAGES_v2.0.42.sql
+
+Este incremental adiciona data de nascimento aos pacientes e instala as novas rotinas seguras de pacote.
+Não reexecute os SQLs antigos.

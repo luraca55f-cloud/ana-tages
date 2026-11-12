@@ -53,3 +53,6 @@ Executar: SQL/14 - Edicao administrativa e financeiro/SQL_ATUALIZACAO_ANA_TAGES_
 15) v2.0.41 — Central de Testes e anti-pausa
 SQL a rodar: NENHUM.
 A atualização usa apenas o perfil de homologação, a Management API já configurada e Cron Trigger do Cloudflare Worker.
+
+16) v2.0.42 — nascimento, pacotes e filtros financeiros
+Executar: SQL/16 - Nascimento pacotes e filtros financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.42.sql

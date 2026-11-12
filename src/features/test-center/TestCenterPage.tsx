@@ -89,11 +89,11 @@ async function runLocalSmokeTests(): Promise<TestCheck[]> {
     let secondAppointmentId = "";
 
     await run("patient", "Pacientes: criar, editar e arquivar", () => {
-      const patient = testCreatePatient({ full_name: "Paciente Teste Automático", billing_model: "session", session_amount: 180 });
+      const patient = testCreatePatient({ full_name: "Paciente Teste Automático", birth_date: "2015-05-10", billing_model: "session", session_amount: 180 });
       patientId = patient.id;
       const edited = testUpdatePatient(patient.id, { phone: "(38) 99999-0000", session_amount: 190 });
       assertion(edited.session_amount === 190, "Edição do paciente não foi persistida.");
-      assertion(testListPatients().some((item) => item.id === patient.id), "Paciente não apareceu na listagem.");
+      assertion(testListPatients().some((item) => item.id === patient.id && item.birth_date === "2015-05-10"), "Paciente/data de nascimento não apareceu na listagem.");
     });
 
     await run("appointment", "Sessões: criar, editar, cobrar e receber", () => {
@@ -137,9 +137,9 @@ async function runLocalSmokeTests(): Promise<TestCheck[]> {
 
     await run("package", "Pacotes: criar parcelamento e cancelar", () => {
       const packagePatient = testCreatePatient({ full_name: "Paciente Pacote Teste", billing_model: "package", package_amount: 600 });
-      testSavePatientPackagePlan({ patient_id: packagePatient.id, total_amount: 600, payment_mode: "installments", installment_count: 3, first_due_date: todayIso() });
+      testSavePatientPackagePlan({ patient_id: packagePatient.id, total_amount: 600, payment_mode: "installments", installment_count: 3, first_due_date: todayIso(), initial_status: "paid", received_at: todayIso(), payment_method: "pix" });
       const db = readTestDb();
-      assertion(db.billings.filter((item) => item.patient_id === packagePatient.id && item.package_plan_id && item.status !== "cancelled").length === 3, "Parcelas do pacote não foram criadas.");
+      assertion(db.billings.filter((item) => item.patient_id === packagePatient.id && item.package_plan_id && item.status === "paid").length === 3, "Pacote recebido não foi registrado corretamente.");
       testCancelPatientPackagePlan(packagePatient.id);
       testDeletePatient(packagePatient.id);
     });

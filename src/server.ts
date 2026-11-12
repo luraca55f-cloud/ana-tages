@@ -470,6 +470,7 @@ async function handleTestCenterApi(request: Request, env: Env): Promise<Response
       const query = `
         select
           to_regclass('public.patients') is not null as patients,
+          exists(select 1 from information_schema.columns where table_schema='public' and table_name='patients' and column_name='birth_date') as patients_birth_date,
           to_regclass('public.appointments') is not null as appointments,
           to_regclass('public.billing_entries') is not null as billing_entries,
           to_regclass('public.expenses') is not null as expenses,
@@ -479,6 +480,8 @@ async function handleTestCenterApi(request: Request, env: Env): Promise<Response
           to_regclass('public.service_work_entries') is not null as service_work_entries,
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='ensure_appointment_billings') as fn_ensure_appointment_billings,
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='save_appointment_billing_plan') as fn_save_appointment_billing_plan,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='save_patient_package_plan_v2') as fn_save_patient_package_plan_v2,
+          exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='cancel_patient_package_plan_v2') as fn_cancel_patient_package_plan_v2,
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='create_manual_revenue') as fn_create_manual_revenue,
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='update_manual_revenue') as fn_update_manual_revenue,
           exists(select 1 from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='delete_manual_revenue') as fn_delete_manual_revenue,
@@ -493,9 +496,9 @@ async function handleTestCenterApi(request: Request, env: Env): Promise<Response
 
       const groups: Array<{ id: string; label: string; keys: string[]; okDetail: string }> = [
         { id: "database", label: "Conexão com o banco real", keys: ["patients"], okDetail: "Supabase respondeu à consulta somente leitura." },
-        { id: "clinic-schema", label: "Pacientes, agenda e materiais", keys: ["patients", "appointments", "materials", "app_settings"], okDetail: "Estruturas clínicas essenciais encontradas." },
+        { id: "clinic-schema", label: "Pacientes, nascimento, agenda e materiais", keys: ["patients", "patients_birth_date", "appointments", "materials", "app_settings"], okDetail: "Estruturas clínicas essenciais e data de nascimento encontradas." },
         { id: "finance-schema", label: "Financeiro e parcelamentos", keys: ["billing_entries", "expenses", "package_plans"], okDetail: "Tabelas financeiras essenciais encontradas." },
-        { id: "finance-routines", label: "Funções financeiras de edição e cobrança", keys: ["fn_ensure_appointment_billings", "fn_save_appointment_billing_plan", "fn_create_manual_revenue", "fn_update_manual_revenue", "fn_delete_manual_revenue", "fn_create_expense", "fn_update_expense", "fn_delete_expense"], okDetail: "Funções financeiras esperadas estão instaladas." },
+        { id: "finance-routines", label: "Funções financeiras de edição, pacote e cobrança", keys: ["fn_ensure_appointment_billings", "fn_save_appointment_billing_plan", "fn_save_patient_package_plan_v2", "fn_cancel_patient_package_plan_v2", "fn_create_manual_revenue", "fn_update_manual_revenue", "fn_delete_manual_revenue", "fn_create_expense", "fn_update_expense", "fn_delete_expense"], okDetail: "Funções financeiras esperadas estão instaladas." },
         { id: "service-work", label: "Prestação de Serviço", keys: ["service_work_entries", "fn_create_service_work_entry"], okDetail: "Estrutura de prestação de serviço encontrada." },
       ];
 

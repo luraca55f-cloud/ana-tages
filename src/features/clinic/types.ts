@@ -6,6 +6,7 @@ export type PatientRow = {
   cpf: string | null;
   phone: string | null;
   email: string | null;
+  birth_date: string | null;
   active: boolean;
   billing_model: "session" | "package";
   session_amount: number | null;

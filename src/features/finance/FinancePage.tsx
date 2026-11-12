@@ -20,12 +20,12 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "../../components/ui/button";
-import { getAppSettings } from "../clinic/repository";
+import { cancelPatientPackagePlan, getAppSettings } from "../clinic/repository";
 import type { AppSettingsRow } from "../clinic/types";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { paymentMethodLabels, printCollectionNotice, printFinancialSummary, printPaymentReceipt } from "./documents";
-import { createExpense, createRevenue, deleteExpense, deleteManualRevenue, deleteRevenueReceipt, loadFinanceBundle, markExpensePaid, updateExpense, updateManualRevenue, updatePatientBilling, updateRevenueReceipt } from "./repository";
-import type { BillingEntry, ExpenseEntry, FinanceBundle, PatientBilling, PatientIdentity, PaymentMethod, RevenueSource } from "./types";
+import { createExpense, createRevenue, deleteExpense, deleteManualRevenue, deleteRevenueReceipt, loadFinanceBundle, loadFinanceYear, markExpensePaid, updateExpense, updateManualRevenue, updatePatientBilling, updateRevenueReceipt } from "./repository";
+import type { BillingEntry, ExpenseEntry, FinanceBundle, FinanceYearMonth, PatientBilling, PatientIdentity, PaymentMethod, RevenueSource } from "./types";
 
 const sourceLabels: Record<RevenueSource, string> = {
   session: "Atendimento",
@@ -240,7 +240,7 @@ export function FinanceDashboardMetrics({
   );
 }
 
-export type FinanceTab = "overview" | "billed" | "received" | "receivables" | "expenses" | "billing";
+export type FinanceTab = "overview" | "billed" | "received" | "receivables" | "expenses" | "billing" | "year";
 
 type ReceivableGroup = {
   key: string;
@@ -275,6 +275,8 @@ export function FinancePage({
   refreshKey?: number;
 }) {
   const [month, setMonth] = useState(currentMonth());
+  const [year, setYear] = useState(Number(currentMonth().slice(0, 4)));
+  const [yearData, setYearData] = useState<FinanceYearMonth[]>([]);
   const [data, setData] = useState<FinanceBundle>(emptyBundle);
   const [documentProfile, setDocumentProfile] = useState<AppSettingsRow | null>(null);
   const [loading, setLoading] = useState(false);
@@ -310,9 +312,10 @@ export function FinancePage({
     setLoading(true);
     setError("");
     try {
-      const [bundle, profile] = await Promise.all([loadFinanceBundle(month, true), getAppSettings()]);
+      const [bundle, profile, annual] = await Promise.all([loadFinanceBundle(month, true), getAppSettings(), loadFinanceYear(year)]);
       setData(bundle);
       setDocumentProfile(profile);
+      setYearData(annual);
     } catch (loadError) {
       console.error(loadError);
       setError("Não foi possível carregar os dados financeiros.");
@@ -324,7 +327,7 @@ export function FinancePage({
   useEffect(() => {
     if (isSupabaseConfigured) void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, refreshKey]);
+  }, [month, year, refreshKey]);
 
   const summary = useMemo(() => {
     const billed = data.billed.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -337,6 +340,13 @@ export function FinancePage({
     const expenseVsBilled = billed > 0 ? (expenses / billed) * 100 : 0;
     return { billed, appointments, otherBilling, received, receivable, expenses, result, expenseVsBilled };
   }, [data]);
+
+  const annualSummary = useMemo(() => ({
+    billed: yearData.reduce((sum, item) => sum + item.billed, 0),
+    received: yearData.reduce((sum, item) => sum + item.received, 0),
+    expenses: yearData.reduce((sum, item) => sum + item.expenses, 0),
+    result: yearData.reduce((sum, item) => sum + item.result, 0),
+  }), [yearData]);
 
   const sourceBreakdown = useMemo(() => {
     return (Object.keys(sourceLabels) as RevenueSource[]).map((source) => ({
@@ -705,6 +715,19 @@ export function FinancePage({
     setEditingPatient(null);
   };
 
+  const cancelPackage = async (patient: PatientBilling) => {
+    if (!isSupabaseConfigured || patient.billing_model !== "package") return;
+    if (!confirm(`Cancelar o pacote de ${patient.full_name}? Valores já recebidos serão preservados e somente cobranças pendentes serão canceladas.`)) return;
+    setError("");
+    try {
+      await cancelPatientPackagePlan(patient.id);
+      await reload();
+    } catch (cause) {
+      console.error(cause);
+      setError(cause instanceof Error ? cause.message : "Não foi possível cancelar o pacote.");
+    }
+  };
+
   return (
     <>
       <section className="animate-rise flex flex-wrap items-end justify-between gap-4 pb-6">
@@ -715,7 +738,7 @@ export function FinancePage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <MonthPicker value={month} onChange={setMonth} />
+          <MonthPicker value={month} onChange={setMonth} /><label className="flex h-10 items-center gap-2 rounded-xl border border-border bg-card px-3 text-xs"><span className="text-muted-foreground">Ano</span><select value={year} onChange={(event) => setYear(Number(event.target.value))} className="bg-transparent font-medium outline-none">{Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - 3 + index).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
           {isSupabaseConfigured && <Button variant="quiet" size="icon" onClick={() => void reload()} disabled={loading} aria-label="Atualizar"><RefreshCw className={loading ? "animate-spin" : ""} /></Button>}
           <Button variant="quiet" onClick={() => { setEditingExpense(null); setModal("expense"); }}><TrendingDown /> Nova despesa</Button>
           <Button variant="dashboard" className="rounded-xl" onClick={() => { setEditingRevenue(null); setModal("revenue"); }}><TrendingUp /> Nova receita</Button>
@@ -738,6 +761,7 @@ export function FinancePage({
         <Tab active={tab === "receivables"} onClick={() => setTab("receivables")}>A receber</Tab>
         <Tab active={tab === "expenses"} onClick={() => setTab("expenses")}>Despesas</Tab>
         <Tab active={tab === "billing"} onClick={() => setTab("billing")}>Pacotes e cobrança</Tab>
+        <Tab active={tab === "year"} onClick={() => setTab("year")}>Resumo anual</Tab>
       </div>
 
       {tab === "overview" && (
@@ -974,7 +998,28 @@ export function FinancePage({
       {tab === "billing" && (
         <section className="dashboard-card mt-4 rounded-2xl p-5">
           <div><h2 className="font-display text-lg">Pacotes e regra de cobrança</h2><p className="mt-1 max-w-3xl text-[11px] leading-5 text-muted-foreground">A cobrança por pacote/plano pode ser à vista ou parcelada. As parcelas são criadas automaticamente em A receber e permanecem vinculadas ao paciente e ao plano.</p></div>
-          <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Paciente</th><th className="px-3 py-3 font-medium">Modelo</th><th className="px-3 py-3 font-medium">Pagamento</th><th className="px-3 py-3 font-medium">1º vencimento</th><th className="px-3 py-3 font-medium">Valor total</th><th className="px-3 py-3 text-right font-medium">Ação</th></tr></thead><tbody>{data.patients.map((patient) => <tr key={patient.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-[13px] font-medium">{patient.full_name}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? "Pacote / plano" : "Por sessão"}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? patient.package_payment_mode === "installments" ? `${patient.package_installments ?? 2} parcelas` : "À vista" : "Após cada atendimento"}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? dateLabel(patient.package_first_due_date) : "—"}</td><td className="px-3 py-4 text-xs font-semibold">{patient.billing_model === "package" && patient.package_amount ? money(patient.package_amount) : patient.session_amount ? `${money(patient.session_amount)} / sessão` : "—"}</td><td className="px-3 py-4 text-right"><Button variant="quiet" size="sm" onClick={() => setEditingPatient(patient)}>Editar <ChevronRight /></Button></td></tr>)}</tbody></table>{data.patients.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Cadastre pacientes para configurar os ciclos de cobrança.</p>}</div>
+          <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[900px] text-left"><thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Paciente</th><th className="px-3 py-3 font-medium">Modelo</th><th className="px-3 py-3 font-medium">Pagamento</th><th className="px-3 py-3 font-medium">1º vencimento</th><th className="px-3 py-3 font-medium">Valor total</th><th className="px-3 py-3 text-right font-medium">Ação</th></tr></thead><tbody>{data.patients.map((patient) => <tr key={patient.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-[13px] font-medium">{patient.full_name}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? "Pacote / plano" : "Por sessão"}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? patient.package_payment_mode === "installments" ? `${patient.package_installments ?? 2} parcelas` : "À vista" : "Após cada atendimento"}</td><td className="px-3 py-4 text-xs">{patient.billing_model === "package" ? dateLabel(patient.package_first_due_date) : "—"}</td><td className="px-3 py-4 text-xs font-semibold">{patient.billing_model === "package" && patient.package_amount ? money(patient.package_amount) : patient.session_amount ? `${money(patient.session_amount)} / sessão` : "—"}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button variant="quiet" size="sm" onClick={() => setEditingPatient(patient)}>Editar <ChevronRight /></Button>{patient.billing_model === "package" && <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => void cancelPackage(patient)}><Trash2 /> Cancelar pacote</Button>}</div></td></tr>)}</tbody></table>{data.patients.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Cadastre pacientes para configurar os ciclos de cobrança.</p>}</div>
+        </section>
+      )}
+
+      {tab === "year" && (
+        <section className="dashboard-card mt-4 rounded-2xl p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><h2 className="font-display text-lg">Resumo financeiro de {year}</h2><p className="mt-1 text-[11px] text-muted-foreground">Veja quanto foi faturado, recebido e gasto em cada mês. O recebido é agrupado pela data real da baixa.</p></div>
+            <label className="flex h-10 items-center gap-2 rounded-xl border border-border bg-background px-3 text-xs"><span className="text-muted-foreground">Ano</span><select value={year} onChange={(event) => setYear(Number(event.target.value))} className="bg-transparent font-medium outline-none">{Array.from({ length: 7 }, (_, index) => new Date().getFullYear() - 5 + index).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Faturado no ano" value={money(annualSummary.billed)} note="Soma das competências do ano" icon={<CircleDollarSign />} />
+            <Metric label="Recebido no ano" value={money(annualSummary.received)} note="Soma pela data de recebimento" icon={<TrendingUp />} />
+            <Metric label="Despesas no ano" value={money(annualSummary.expenses)} note="Soma das despesas por competência" icon={<TrendingDown />} />
+            <Metric label="Resultado de caixa" value={money(annualSummary.result)} note="Recebido menos despesas" icon={<WalletCards />} tone={annualSummary.result < 0 ? "negative" : "positive"} />
+          </div>
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left">
+              <thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3">Mês</th><th className="px-3 py-3 text-right">Faturado</th><th className="px-3 py-3 text-right">Recebido</th><th className="px-3 py-3 text-right">Despesas</th><th className="px-3 py-3 text-right">Resultado</th></tr></thead>
+              <tbody>{yearData.map((item) => <tr key={item.month} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs font-medium">{new Intl.DateTimeFormat("pt-BR", { month: "long" }).format(new Date(`${item.month}-15T12:00:00`))}</td><td className="px-3 py-4 text-right text-xs">{money(item.billed)}</td><td className="px-3 py-4 text-right text-xs font-semibold text-emerald-700">{money(item.received)}</td><td className="px-3 py-4 text-right text-xs text-red-700">{money(item.expenses)}</td><td className={`px-3 py-4 text-right text-xs font-semibold ${item.result < 0 ? "text-red-700" : "text-primary"}`}>{money(item.result)}</td></tr>)}</tbody>
+            </table>
+          </div>
         </section>
       )}
 
@@ -1161,6 +1206,9 @@ function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBil
     package_payment_mode: patient.package_payment_mode ?? "single",
     package_installments: patient.package_installments ?? 2,
     package_first_due_date: patient.package_first_due_date ?? isoToday(),
+    package_initial_status: "pending",
+    package_received_at: isoToday(),
+    package_payment_method: "pix",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1176,7 +1224,7 @@ function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBil
     setError("");
     try { await onSave({ ...draft, package_payment_mode: paymentMode, package_installments: installmentCount }); } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar a regra de cobrança."); } finally { setSaving(false); }
   };
-  return <Modal title="Regra de cobrança" subtitle={patient.full_name} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Modelo de cobrança"><select value={draft.billing_model} onChange={(event) => setDraft((current) => ({ ...current, billing_model: event.target.value as "session" | "package" }))} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote / plano</option></select></FieldLabel>{draft.billing_model === "session" && <FieldLabel label="Valor padrão da sessão"><input inputMode="decimal" value={draft.session_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, session_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" placeholder="0,00" /></FieldLabel>}{draft.billing_model === "package" && <><FieldLabel label="Valor total do pacote / plano"><input inputMode="decimal" value={draft.package_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" /></FieldLabel><FieldLabel label="Forma de pagamento"><select value={paymentMode} onChange={(event) => setDraft((current) => ({ ...current, package_payment_mode: event.target.value as "single" | "installments" }))} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></FieldLabel>{paymentMode === "installments" && <FieldLabel label="Número de parcelas"><input type="number" min={1} max={60} value={draft.package_installments ?? 1} onChange={(event) => setDraft((current) => ({ ...current, package_installments: Number(event.target.value) }))} className="input-finance" /></FieldLabel>}<FieldLabel label={paymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}><input type="date" value={draft.package_first_due_date ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_first_due_date: event.target.value }))} className="input-finance" /></FieldLabel><div className="rounded-2xl border border-border bg-background/45 p-4 sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Prévia das cobranças em A receber</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">{preview.map((item)=><div key={item.number} className="flex items-center justify-between gap-3 rounded-xl bg-card/70 px-3 py-2 text-xs"><span>{paymentMode === "single" ? "Pagamento único" : `Parcela ${item.number}/${preview.length}`} • {dateLabel(item.dueDate)}</span><strong>{money(item.amount)}</strong></div>)}</div></div></>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</Button></div></div></Modal>;
+  return <Modal title="Regra de cobrança" subtitle={patient.full_name} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Modelo de cobrança"><select value={draft.billing_model} onChange={(event) => setDraft((current) => ({ ...current, billing_model: event.target.value as "session" | "package" }))} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote / plano</option></select></FieldLabel>{draft.billing_model === "session" && <FieldLabel label="Valor padrão da sessão"><input inputMode="decimal" value={draft.session_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, session_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" placeholder="0,00" /></FieldLabel>}{draft.billing_model === "package" && <><FieldLabel label="Valor total do pacote / plano"><input inputMode="decimal" value={draft.package_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" /></FieldLabel><FieldLabel label="Forma de pagamento"><select value={paymentMode} onChange={(event) => setDraft((current) => ({ ...current, package_payment_mode: event.target.value as "single" | "installments" }))} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></FieldLabel>{paymentMode === "installments" && <FieldLabel label="Número de parcelas"><input type="number" min={1} max={60} value={draft.package_installments ?? 1} onChange={(event) => setDraft((current) => ({ ...current, package_installments: Number(event.target.value) }))} className="input-finance" /></FieldLabel>}<FieldLabel label={paymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}><input type="date" value={draft.package_first_due_date ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_first_due_date: event.target.value }))} className="input-finance" /></FieldLabel><FieldLabel label="Situação do pacote"><select value={draft.package_initial_status ?? "pending"} onChange={(event) => setDraft((current) => ({ ...current, package_initial_status: event.target.value as "pending" | "paid" }))} className="input-finance"><option value="pending">A receber</option><option value="paid">Recebido</option></select></FieldLabel>{draft.package_initial_status === "paid" && <><FieldLabel label="Data do recebimento"><input type="date" value={draft.package_received_at ?? isoToday()} onChange={(event) => setDraft((current) => ({ ...current, package_received_at: event.target.value }))} className="input-finance" /></FieldLabel><FieldLabel label="Forma de pagamento"><select value={draft.package_payment_method ?? "pix"} onChange={(event) => setDraft((current) => ({ ...current, package_payment_method: event.target.value as PaymentMethod }))} className="input-finance">{Object.entries(paymentMethodLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel></>}<div className="rounded-2xl border border-border bg-background/45 p-4 sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Prévia das cobranças em A receber</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">{preview.map((item)=><div key={item.number} className="flex items-center justify-between gap-3 rounded-xl bg-card/70 px-3 py-2 text-xs"><span>{paymentMode === "single" ? "Pagamento único" : `Parcela ${item.number}/${preview.length}`} • {dateLabel(item.dueDate)}</span><strong>{money(item.amount)}</strong></div>)}</div></div></>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</Button></div></div></Modal>;
 }
 
 function FieldLabel({ label, children }: { label: string; children: ReactNode }) {

@@ -311,3 +311,13 @@ Ajustes administrativos solicitados pela operação do consultório: lançamento
 - O anti-pausa reduz o risco de pausa no plano Free, mas não é garantia; plano pago continua sendo a única forma garantida de não sofrer pausa automática por inatividade.
 - SQL novo: **NÃO**. SQL a rodar nesta versão: **NENHUM**.
 - Commit sugerido: `Adicionar Central de Testes e anti-pausa v2.0.41`.
+
+## v2.0.42 — nascimento, pacotes e filtros financeiros
+
+- Cadastro de paciente ganhou **Data de nascimento**; idade é calculada automaticamente pela data atual.
+- O sistema identifica automaticamente **Atendimento infantil** (<18 anos) e **Atendimento adulto** (18+), exibindo essa informação no card, detalhe, atendimento e prontuário.
+- Pacote/plano pode ser salvo como **A receber** ou **Recebido**, com data e forma de pagamento quando já recebido.
+- Cancelamento de pacote foi reforçado: valores já recebidos são preservados e apenas saldos pendentes são cancelados.
+- Financeiro ganhou **Resumo anual** com faturado, recebido, despesas e resultado mês a mês.
+- O total **Recebido** é filtrado pela data real do recebimento; faturamento continua por competência.
+- SQL incremental: `SQL/16 - Nascimento pacotes e filtros financeiros/SQL_ATUALIZACAO_ANA_TAGES_v2.0.42.sql`.
