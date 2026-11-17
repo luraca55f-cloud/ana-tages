@@ -67,6 +67,12 @@ function nextDayIso() {
   return date.toISOString().slice(0, 10);
 }
 
+function previousMonthDayIso() {
+  const date = new Date();
+  date.setMonth(date.getMonth() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
 function assertion(condition: unknown, message: string) {
   if (!condition) throw new Error(message);
 }
@@ -133,23 +139,40 @@ async function runLocalSmokeTests(): Promise<TestCheck[]> {
       testSaveAppointmentBillingPlan({ appointment_id: installmentAppointment.id, payment_mode: "installments", installment_count: 3, first_due_date: todayIso() });
       const installments = testListAppointmentPayments([installmentAppointment.id]);
       assertion(installments.length === 3, "O parcelamento 3x não gerou três cobranças.");
+
+      const noShow = testCreateAppointment({
+        patient_id: patientId,
+        patient_name: "Paciente Teste Automático",
+        scheduled_at: `${todayIso()}T08:00:00.000Z`,
+        duration_minutes: 50,
+        modality: "presential",
+        status: "no_show",
+        service_kind: "session",
+        service_name: "Sessão com falta",
+        amount: 0,
+        notes_admin: "Falta sem cobrança",
+      });
+      assertion(testListAppointmentPayments([noShow.id]).length === 0, "Falta com valor zero gerou cobrança indevida.");
     });
 
     await run("package", "Pacotes: criar parcelamento e cancelar", () => {
       const packagePatient = testCreatePatient({ full_name: "Paciente Pacote Teste", billing_model: "package", package_amount: 600 });
-      testSavePatientPackagePlan({ patient_id: packagePatient.id, total_amount: 600, payment_mode: "installments", installment_count: 3, first_due_date: todayIso(), initial_status: "paid", received_at: todayIso(), payment_method: "pix" });
+      testSavePatientPackagePlan({ patient_id: packagePatient.id, total_amount: 600, payment_mode: "installments", installment_count: 3, session_count: 4, first_due_date: todayIso(), initial_status: "paid", received_at: todayIso(), payment_method: "pix" });
       const db = readTestDb();
       assertion(db.billings.filter((item) => item.patient_id === packagePatient.id && item.package_plan_id && item.status === "paid").length === 3, "Pacote recebido não foi registrado corretamente.");
+      assertion(db.packagePlans.find((item) => item.patient_id === packagePatient.id && item.status === "active")?.session_count === 4, "Quantidade de sessões do pacote não foi preservada.");
       testCancelPatientPackagePlan(packagePatient.id);
       testDeletePatient(packagePatient.id);
     });
 
     await run("finance", "Financeiro: receita manual, edição, baixa e exclusão", () => {
       const description = `Receita smoke ${Date.now()}`;
-      testCreateRevenue({ source_type: "other", client_name: "Teste automático", description, competence_date: todayIso(), issued_at: todayIso(), due_date: todayIso(), amount: 123.45, status: "pending" });
+      const oldReceivedAt = previousMonthDayIso();
+      testCreateRevenue({ source_type: "other", client_name: "Teste automático", description, competence_date: oldReceivedAt, issued_at: oldReceivedAt, due_date: oldReceivedAt, amount: 123.45, status: "paid", received_at: oldReceivedAt, payment_method: "pix" });
       let db = readTestDb();
       const revenue = db.billings.find((item) => item.description === description);
       assertion(revenue, "Receita manual não foi criada.");
+      assertion(revenue?.received_at === oldReceivedAt, "Receita retroativa não preservou a data real do recebimento.");
       testUpdateManualRevenue({ id: revenue!.id, source_type: "other", client_name: "Teste automático", description: `${description} editada`, competence_date: todayIso(), issued_at: todayIso(), due_date: todayIso(), amount: 130 });
       testMarkRevenuePaid(revenue!.id);
       db = readTestDb();

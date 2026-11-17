@@ -290,6 +290,7 @@ export function FinancePage({
   const [movementFilter, setMovementFilter] = useState<"all" | "revenue" | "expense">("all");
   const [receivablePatientFilter, setReceivablePatientFilter] = useState("all");
   const [receivableStatusFilter, setReceivableStatusFilter] = useState<"all" | "pending" | "partial" | "overdue">("all");
+  const [receivableScope, setReceivableScope] = useState<"all" | "until_today" | "selected_month">("all");
   const [receivableStartDate, setReceivableStartDate] = useState("");
   const [receivableEndDate, setReceivableEndDate] = useState("");
 
@@ -443,23 +444,31 @@ export function FinancePage({
   }, [data.receivables, data.packageBillings, data.patientDirectory]);
 
   const filteredReceivableGroups = useMemo(() => {
-    return receivableGroups.filter((group) => {
-      if (receivablePatientFilter !== "all" && group.key !== receivablePatientFilter) return false;
-      if (receivableStatusFilter === "overdue" && group.overdueInstallments === 0) return false;
-      if (receivableStatusFilter === "partial" && group.partialInstallments === 0) return false;
-      if (receivableStatusFilter === "pending" && !group.openEntries.some((entry) => entry.status === "pending")) return false;
-      if (receivableStartDate || receivableEndDate) {
-        const hasEntryInPeriod = group.openEntries.some((entry) => {
-          const due = entry.due_date ?? entry.competence_date;
-          if (receivableStartDate && due < receivableStartDate) return false;
-          if (receivableEndDate && due > receivableEndDate) return false;
-          return true;
-        });
-        if (!hasEntryInPeriod) return false;
-      }
-      return true;
+    const today = isoToday();
+    return receivableGroups.flatMap((group) => {
+      if (receivablePatientFilter !== "all" && group.key !== receivablePatientFilter) return [];
+      const openEntries = group.openEntries.filter((entry) => {
+        const due = entry.due_date ?? entry.competence_date;
+        if (receivableScope === "until_today" && due > today) return false;
+        if (receivableScope === "selected_month" && due.slice(0, 7) !== month) return false;
+        if (receivableStatusFilter === "overdue" && !(due < today && outstanding(entry) > 0)) return false;
+        if (receivableStatusFilter === "partial" && entry.status !== "partial") return false;
+        if (receivableStatusFilter === "pending" && entry.status !== "pending") return false;
+        if (receivableStartDate && due < receivableStartDate) return false;
+        if (receivableEndDate && due > receivableEndDate) return false;
+        return true;
+      });
+      if (openEntries.length === 0) return [];
+      const outstandingAmount = openEntries.reduce((sum, entry) => sum + outstanding(entry), 0);
+      const overdueInstallments = openEntries.filter((entry) => {
+        const due = entry.due_date ?? entry.competence_date;
+        return due < today && outstanding(entry) > 0;
+      }).length;
+      const partialInstallments = openEntries.filter((entry) => entry.status === "partial").length;
+      const nextDueDate = openEntries.map((entry) => entry.due_date ?? entry.competence_date).sort()[0] ?? null;
+      return [{ ...group, openEntries, outstandingAmount, overdueInstallments, partialInstallments, nextDueDate }];
     });
-  }, [receivableGroups, receivablePatientFilter, receivableStatusFilter, receivableStartDate, receivableEndDate]);
+  }, [receivableGroups, receivablePatientFilter, receivableStatusFilter, receivableScope, receivableStartDate, receivableEndDate, month]);
 
   const filteredReceivableSummary = useMemo(() => ({
     outstanding: filteredReceivableGroups.reduce((sum, group) => sum + group.outstandingAmount, 0),
@@ -507,7 +516,7 @@ export function FinancePage({
     [latestMovements, movementFilter],
   );
 
-  const saveRevenue = async (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, clientRequestId: string) => {
+  const saveRevenue = async (entry: Omit<BillingEntry, "id" | "received_amount">, clientRequestId: string) => {
     if (!isSupabaseConfigured) throw new Error("Supabase não configurado");
     if (editingRevenue) {
       await updateManualRevenue({
@@ -531,6 +540,7 @@ export function FinancePage({
         due_date: entry.due_date,
         amount: entry.amount,
         status: entry.status === "paid" ? "paid" : "pending",
+        received_at: entry.received_at,
         payment_method: entry.payment_method,
         client_request_id: clientRequestId,
       });
@@ -895,17 +905,25 @@ export function FinancePage({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-display text-lg">A receber por paciente</h2>
-              <p className="mt-1 max-w-3xl text-[11px] leading-5 text-muted-foreground">Veja quem está devendo, CPF, valor total, o que já foi pago, saldo restante e o andamento das parcelas. O período filtra pelo vencimento das cobranças ainda em aberto.</p>
+              <p className="mt-1 max-w-3xl text-[11px] leading-5 text-muted-foreground">Veja quem está devendo, CPF, saldo restante e parcelas. Escolha se quer ver toda a carteira, somente vencimentos até hoje ou apenas o mês selecionado.</p>
             </div>
             <strong className="font-display text-xl">{money(filteredReceivableSummary.outstanding)}</strong>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <label className="space-y-1.5 text-[10px] font-medium text-muted-foreground">
               <span>Paciente / cliente</span>
               <select value={receivablePatientFilter} onChange={(event) => setReceivablePatientFilter(event.target.value)} className="input-finance">
                 <option value="all">Todos</option>
                 {receivableGroups.map((group) => <option key={group.key} value={group.key}>{group.patientName}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1.5 text-[10px] font-medium text-muted-foreground">
+              <span>Carteira</span>
+              <select value={receivableScope} onChange={(event) => setReceivableScope(event.target.value as "all" | "until_today" | "selected_month")} className="input-finance">
+                <option value="all">Tudo em aberto</option>
+                <option value="until_today">Vencimentos até hoje</option>
+                <option value="selected_month">Somente mês selecionado</option>
               </select>
             </label>
             <label className="space-y-1.5 text-[10px] font-medium text-muted-foreground">
@@ -926,7 +944,7 @@ export function FinancePage({
               <input type="date" value={receivableEndDate} onChange={(event) => setReceivableEndDate(event.target.value)} className="input-finance" />
             </label>
             <div className="flex items-end">
-              <Button variant="quiet" className="w-full" onClick={() => { setReceivablePatientFilter("all"); setReceivableStatusFilter("all"); setReceivableStartDate(""); setReceivableEndDate(""); }}>Limpar filtros</Button>
+              <Button variant="quiet" className="w-full" onClick={() => { setReceivablePatientFilter("all"); setReceivableStatusFilter("all"); setReceivableScope("all"); setReceivableStartDate(""); setReceivableEndDate(""); }}>Limpar filtros</Button>
             </div>
           </div>
 
@@ -1026,7 +1044,7 @@ export function FinancePage({
       {modal === "revenue" && <RevenueModal initialRevenue={editingRevenue} defaultDate={defaultDateForMonth(month)} onClose={() => { setEditingRevenue(null); setModal(null); }} onSave={async (entry, requestId) => { await saveRevenue(entry, requestId); setEditingRevenue(null); setModal(null); }} />}
       {modal === "expense" && <ExpenseModal initialExpense={editingExpense} defaultDate={defaultDateForMonth(month)} onClose={() => { setEditingExpense(null); setModal(null); }} onSave={async (entry, requestId) => { await saveExpense(entry, requestId); setEditingExpense(null); setModal(null); }} />}
       {editingReceipt && <ReceiptModal entry={editingReceipt} onClose={() => setEditingReceipt(null)} onSave={saveReceipt} />}
-      {editingPatient && <PatientBillingModal patient={editingPatient} onClose={() => setEditingPatient(null)} onSave={savePatientBilling} />}
+      {editingPatient && <PatientBillingModal patient={editingPatient} onClose={() => setEditingPatient(null)} onSave={savePatientBilling} onCancelPackage={async () => { await cancelPackage(editingPatient); setEditingPatient(null); }} />}
     </>
   );
 }
@@ -1055,7 +1073,7 @@ function Modal({ title, subtitle, onClose, children }: { title: string; subtitle
   return <div className="fixed inset-0 z-[120] grid place-items-center bg-foreground/25 p-4 backdrop-blur-sm" onMouseDown={onClose}><div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-border bg-card shadow-2xl" onMouseDown={(event) => event.stopPropagation()}><div className="flex items-start justify-between border-b border-border p-5"><div><h2 className="font-display text-xl">{title}</h2><p className="mt-1 text-[11px] text-muted-foreground">{subtitle}</p></div><Button variant="ghost" size="icon" onClick={onClose}><X /></Button></div>{children}</div></div>;
 }
 
-function RevenueModal({ initialRevenue, defaultDate, onClose, onSave }: { initialRevenue?: BillingEntry | null; defaultDate: string; onClose: () => void; onSave: (entry: Omit<BillingEntry, "id" | "received_amount" | "received_at">, requestId: string) => Promise<void> }) {
+function RevenueModal({ initialRevenue, defaultDate, onClose, onSave }: { initialRevenue?: BillingEntry | null; defaultDate: string; onClose: () => void; onSave: (entry: Omit<BillingEntry, "id" | "received_amount">, requestId: string) => Promise<void> }) {
   const requestId = useRef(crypto.randomUUID()).current;
   const isEditing = Boolean(initialRevenue);
   const [source, setSource] = useState<RevenueSource>(initialRevenue?.source_type ?? "session");
@@ -1065,6 +1083,7 @@ function RevenueModal({ initialRevenue, defaultDate, onClose, onSave }: { initia
   const [competence, setCompetence] = useState(initialRevenue?.competence_date ?? defaultDate);
   const [dueDate, setDueDate] = useState(initialRevenue?.due_date ?? defaultDate);
   const [paid, setPaid] = useState(initialRevenue ? Number(initialRevenue.received_amount || 0) > 0 : false);
+  const [receivedAt, setReceivedAt] = useState(initialRevenue?.received_at ?? defaultDate);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(initialRevenue?.payment_method ?? "pix");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1079,6 +1098,10 @@ function RevenueModal({ initialRevenue, defaultDate, onClose, onSave }: { initia
       setError("Informe a competência do lançamento.");
       return;
     }
+    if (!isEditing && paid && !receivedAt) {
+      setError("Informe a data em que o valor foi recebido.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -1091,6 +1114,7 @@ function RevenueModal({ initialRevenue, defaultDate, onClose, onSave }: { initia
         due_date: dueDate || null,
         amount: numeric,
         status: isEditing ? initialRevenue?.status ?? "pending" : paid ? "paid" : "pending",
+        received_at: isEditing ? initialRevenue?.received_at ?? null : paid ? receivedAt : null,
         payment_method: isEditing ? initialRevenue?.payment_method ?? null : paid ? paymentMethod : null,
       }, requestId);
     } catch (saveError) {
@@ -1100,7 +1124,7 @@ function RevenueModal({ initialRevenue, defaultDate, onClose, onSave }: { initia
     }
   };
 
-  return <Modal title={isEditing ? "Editar lançamento" : "Nova receita"} subtitle={isEditing ? "Altere o faturamento manual sem perder o histórico do recebimento." : "Registre entradas atuais ou de meses anteriores."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Receita / entrada{isEditing && <span className="ml-2 text-muted-foreground">• recebimentos são editados separadamente</span>}</div><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor faturado"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência / mês do faturamento"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Pode informar uma data de mês anterior.</span></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel>{!isEditing && <label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>}{!isEditing && paid && <FieldLabel label="Forma de pagamento"><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} className="input-finance">{Object.entries(paymentMethodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : isEditing ? "Salvar alterações" : "Salvar receita"}</Button></div></div></Modal>;
+  return <Modal title={isEditing ? "Editar lançamento" : "Nova receita"} subtitle={isEditing ? "Altere o faturamento manual sem perder o histórico do recebimento." : "Registre entradas atuais ou de meses anteriores."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-primary/15 bg-primary/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Receita / entrada{isEditing && <span className="ml-2 text-muted-foreground">• recebimentos são editados separadamente</span>}</div><FieldLabel label="Origem"><select value={source} onChange={(event) => setSource(event.target.value as RevenueSource)} className="input-finance">{Object.entries(sourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Cliente / paciente / empresa"><input value={client} onChange={(event) => setClient(event.target.value)} className="input-finance" placeholder="Ex.: Mariana Souza" /></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Descrição do serviço" /></FieldLabel><FieldLabel label="Valor faturado"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label="Competência / mês do faturamento"><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Pode informar uma data de mês anterior.</span></FieldLabel><FieldLabel label="Vencimento"><input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className="input-finance" /></FieldLabel>{!isEditing && <label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> Já foi recebido</label>}{!isEditing && paid && <><FieldLabel label="Data do recebimento"><input type="date" max={isoToday()} value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Use a data real em que o dinheiro entrou, inclusive de mês anterior.</span></FieldLabel><FieldLabel label="Forma de pagamento"><select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)} className="input-finance">{Object.entries(paymentMethodLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel></>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !client.trim() || !amount}>{saving ? "Salvando..." : isEditing ? "Salvar alterações" : "Salvar receita"}</Button></div></div></Modal>;
 }
 
 function ReceiptModal({ entry, onClose, onSave }: { entry: BillingEntry; onClose: () => void; onSave: (input: { id: string; received_amount: number; received_at: string; payment_method: PaymentMethod }) => Promise<void> }) {
@@ -1200,11 +1224,12 @@ function ExpenseModal({ initialExpense, defaultDate, onClose, onSave }: { initia
   return <Modal title={isEditing ? "Editar despesa" : "Nova despesa"} subtitle={isEditing ? "Atualize os dados da despesa selecionada." : "Registre custos atuais ou de meses anteriores, variáveis ou fixos."} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><div className="rounded-xl border border-destructive/15 bg-destructive/5 p-3 text-xs sm:col-span-2"><span className="font-medium">Tipo de movimentação:</span> Despesa / saída</div><FieldLabel label="Categoria"><select value={category} onChange={(event) => setCategory(event.target.value)} className="input-finance">{Object.entries(expenseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel><FieldLabel label="Descrição"><input value={description} onChange={(event) => setDescription(event.target.value)} className="input-finance" placeholder="Ex.: Aluguel do consultório" /></FieldLabel><FieldLabel label="Valor"><input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="input-finance" placeholder="0,00" /></FieldLabel><FieldLabel label={recurrence === "fixed" ? "Mês inicial" : "Competência / mês da despesa"}><input type="date" value={competence} onChange={(event) => setCompetence(event.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Pode informar uma data de mês anterior.</span></FieldLabel><FieldLabel label="Tipo"><select value={recurrence} onChange={(event) => setRecurrence(event.target.value as "fixed" | "variable")} className="input-finance"><option value="variable">Variável / avulsa</option><option value="fixed">Fixa mensal</option></select></FieldLabel>{recurrence === "fixed" && <FieldLabel label="Dia fixo todo mês"><input type="number" min={1} max={28} value={fixedDay} onChange={(event) => setFixedDay(Number(event.target.value))} className="input-finance" /></FieldLabel>} {recurrence === "fixed" && <div className="rounded-xl border border-border bg-background/45 p-3 text-[10px] leading-4 text-muted-foreground sm:col-span-2">O sistema criará esta despesa automaticamente nos próximos meses com o mesmo valor e vencimento no dia {fixedDay || "—"}.</div>}<label className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-3 text-xs sm:col-span-2"><input type="checkbox" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "fixed" ? "A despesa deste primeiro mês já foi paga" : "Já foi paga"}</label>{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void submit()} disabled={saving || !description.trim() || !amount}>{saving ? (isEditing ? "Salvando alterações..." : "Salvando...") : (isEditing ? "Salvar alterações" : "Salvar despesa")}</Button></div></div></Modal>;
 }
 
-function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBilling; onClose: () => void; onSave: (patient: PatientBilling) => Promise<void> }) {
+function PatientBillingModal({ patient, onClose, onSave, onCancelPackage }: { patient: PatientBilling; onClose: () => void; onSave: (patient: PatientBilling) => Promise<void>; onCancelPackage: () => Promise<void> }) {
   const [draft, setDraft] = useState<PatientBilling>({
     ...patient,
     package_payment_mode: patient.package_payment_mode ?? "single",
     package_installments: patient.package_installments ?? 2,
+    package_session_count: patient.package_session_count ?? 4,
     package_first_due_date: patient.package_first_due_date ?? isoToday(),
     package_initial_status: "pending",
     package_received_at: isoToday(),
@@ -1215,6 +1240,8 @@ function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBil
   const paymentMode = draft.package_payment_mode === "installments" ? "installments" : "single";
   const installmentCount = paymentMode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(Number(draft.package_installments ?? 1))));
   const preview = packageInstallmentPreview(Number(draft.package_amount ?? 0), installmentCount, draft.package_first_due_date ?? "");
+  const sessionCount = Math.max(1, Math.min(31, Math.trunc(Number(draft.package_session_count ?? 1))));
+  const perSession = Number(draft.package_amount ?? 0) > 0 ? Number(draft.package_amount ?? 0) / sessionCount : 0;
   const save = async () => {
     if (draft.billing_model === "package") {
       if (!draft.package_amount || draft.package_amount <= 0) { setError("Informe o valor total do pacote/plano."); return; }
@@ -1222,9 +1249,9 @@ function PatientBillingModal({ patient, onClose, onSave }: { patient: PatientBil
     }
     setSaving(true);
     setError("");
-    try { await onSave({ ...draft, package_payment_mode: paymentMode, package_installments: installmentCount }); } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar a regra de cobrança."); } finally { setSaving(false); }
+    try { await onSave({ ...draft, package_payment_mode: paymentMode, package_installments: installmentCount, package_session_count: sessionCount }); } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Não foi possível salvar a regra de cobrança."); } finally { setSaving(false); }
   };
-  return <Modal title="Regra de cobrança" subtitle={patient.full_name} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Modelo de cobrança"><select value={draft.billing_model} onChange={(event) => setDraft((current) => ({ ...current, billing_model: event.target.value as "session" | "package" }))} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote / plano</option></select></FieldLabel>{draft.billing_model === "session" && <FieldLabel label="Valor padrão da sessão"><input inputMode="decimal" value={draft.session_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, session_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" placeholder="0,00" /></FieldLabel>}{draft.billing_model === "package" && <><FieldLabel label="Valor total do pacote / plano"><input inputMode="decimal" value={draft.package_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" /></FieldLabel><FieldLabel label="Forma de pagamento"><select value={paymentMode} onChange={(event) => setDraft((current) => ({ ...current, package_payment_mode: event.target.value as "single" | "installments" }))} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></FieldLabel>{paymentMode === "installments" && <FieldLabel label="Número de parcelas"><input type="number" min={1} max={60} value={draft.package_installments ?? 1} onChange={(event) => setDraft((current) => ({ ...current, package_installments: Number(event.target.value) }))} className="input-finance" /></FieldLabel>}<FieldLabel label={paymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}><input type="date" value={draft.package_first_due_date ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_first_due_date: event.target.value }))} className="input-finance" /></FieldLabel><FieldLabel label="Situação do pacote"><select value={draft.package_initial_status ?? "pending"} onChange={(event) => setDraft((current) => ({ ...current, package_initial_status: event.target.value as "pending" | "paid" }))} className="input-finance"><option value="pending">A receber</option><option value="paid">Recebido</option></select></FieldLabel>{draft.package_initial_status === "paid" && <><FieldLabel label="Data do recebimento"><input type="date" value={draft.package_received_at ?? isoToday()} onChange={(event) => setDraft((current) => ({ ...current, package_received_at: event.target.value }))} className="input-finance" /></FieldLabel><FieldLabel label="Forma de pagamento"><select value={draft.package_payment_method ?? "pix"} onChange={(event) => setDraft((current) => ({ ...current, package_payment_method: event.target.value as PaymentMethod }))} className="input-finance">{Object.entries(paymentMethodLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel></>}<div className="rounded-2xl border border-border bg-background/45 p-4 sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Prévia das cobranças em A receber</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">{preview.map((item)=><div key={item.number} className="flex items-center justify-between gap-3 rounded-xl bg-card/70 px-3 py-2 text-xs"><span>{paymentMode === "single" ? "Pagamento único" : `Parcela ${item.number}/${preview.length}`} • {dateLabel(item.dueDate)}</span><strong>{money(item.amount)}</strong></div>)}</div></div></>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex justify-end gap-2 pt-2 sm:col-span-2"><Button variant="ghost" onClick={onClose}>Cancelar</Button><Button variant="dashboard" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</Button></div></div></Modal>;
+  return <Modal title="Regra de cobrança" subtitle={patient.full_name} onClose={onClose}><div className="grid gap-4 p-5 sm:grid-cols-2"><FieldLabel label="Modelo de cobrança"><select value={draft.billing_model} onChange={(event) => setDraft((current) => ({ ...current, billing_model: event.target.value as "session" | "package" }))} className="input-finance"><option value="session">Por sessão</option><option value="package">Pacote / plano</option></select></FieldLabel>{draft.billing_model === "session" && <FieldLabel label="Valor padrão da sessão"><input inputMode="decimal" value={draft.session_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, session_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" placeholder="0,00" /></FieldLabel>}{draft.billing_model === "package" && <><FieldLabel label="Valor total do pacote / plano"><input inputMode="decimal" value={draft.package_amount ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_amount: Number(event.target.value.replace(",", ".")) || null }))} className="input-finance" /></FieldLabel><FieldLabel label="Sessões do pacote"><input type="number" min={1} max={31} value={draft.package_session_count ?? 4} onChange={(event) => setDraft((current) => ({ ...current, package_session_count: Number(event.target.value) }))} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">{perSession > 0 ? `${sessionCount} sessão(ões) • ${money(perSession)} por sessão` : "Informe o valor para calcular."}</span></FieldLabel><FieldLabel label="Forma de pagamento"><select value={paymentMode} onChange={(event) => setDraft((current) => ({ ...current, package_payment_mode: event.target.value as "single" | "installments" }))} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></FieldLabel>{paymentMode === "installments" && <FieldLabel label="Número de parcelas"><input type="number" min={1} max={60} value={draft.package_installments ?? 1} onChange={(event) => setDraft((current) => ({ ...current, package_installments: Number(event.target.value) }))} className="input-finance" /></FieldLabel>}<FieldLabel label={paymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}><input type="date" value={draft.package_first_due_date ?? ""} onChange={(event) => setDraft((current) => ({ ...current, package_first_due_date: event.target.value }))} className="input-finance" /></FieldLabel><FieldLabel label="Situação do pacote"><select value={draft.package_initial_status ?? "pending"} onChange={(event) => setDraft((current) => ({ ...current, package_initial_status: event.target.value as "pending" | "paid" }))} className="input-finance"><option value="pending">A receber</option><option value="paid">Recebido</option></select></FieldLabel>{draft.package_initial_status === "paid" && <><FieldLabel label="Data do recebimento"><input type="date" value={draft.package_received_at ?? isoToday()} onChange={(event) => setDraft((current) => ({ ...current, package_received_at: event.target.value }))} className="input-finance" /></FieldLabel><FieldLabel label="Forma de pagamento"><select value={draft.package_payment_method ?? "pix"} onChange={(event) => setDraft((current) => ({ ...current, package_payment_method: event.target.value as PaymentMethod }))} className="input-finance">{Object.entries(paymentMethodLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></FieldLabel></>}<div className="rounded-2xl border border-border bg-background/45 p-4 sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Prévia das cobranças em A receber</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">{preview.map((item)=><div key={item.number} className="flex items-center justify-between gap-3 rounded-xl bg-card/70 px-3 py-2 text-xs"><span>{paymentMode === "single" ? "Pagamento único" : `Parcela ${item.number}/${preview.length}`} • {dateLabel(item.dueDate)}</span><strong>{money(item.amount)}</strong></div>)}</div></div></>}{error && <p className="text-xs text-destructive sm:col-span-2">{error}</p>}<div className="flex flex-wrap justify-between gap-2 pt-2 sm:col-span-2">{patient.package_plan_id ? <Button variant="ghost" className="text-destructive hover:text-destructive" disabled={saving} onClick={async()=>{setSaving(true);setError("");try{await onCancelPackage();}catch(cause){setError(cause instanceof Error?cause.message:"Não foi possível cancelar o pacote.");}finally{setSaving(false);}}}><Trash2 /> Cancelar pacote</Button> : <span/>}<div className="flex gap-2"><Button variant="ghost" onClick={onClose}>Fechar</Button><Button variant="dashboard" onClick={() => void save()} disabled={saving}>{saving ? "Salvando..." : "Salvar regra"}</Button></div></div></div></Modal>;
 }
 
 function FieldLabel({ label, children }: { label: string; children: ReactNode }) {

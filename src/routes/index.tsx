@@ -220,7 +220,7 @@ function patientAge(birthDate: string | null | undefined) {
 function patientCareProfile(birthDate: string | null | undefined) {
   const age = patientAge(birthDate);
   if (age == null) return { age: null, label: "Faixa etária não informada" };
-  return { age, label: age < 18 ? "Atendimento infantil" : "Atendimento adulto" };
+  return { age, label: age < 12 ? "Atendimento infantil" : age < 18 ? "Atendimento adolescente" : "Atendimento adulto" };
 }
 
 function addMonthsClamped(dateText: string, monthOffset: number) {
@@ -536,7 +536,7 @@ function ConsultorioApp() {
           <div className="hidden text-xs text-muted-foreground sm:block">{loadingCore ? "Atualizando dados..." : coreLoadError ? "Falha ao atualizar dados" : "Dados atualizados"}</div>
           <div className="ml-auto flex items-center gap-2">
             {isTestMode && <>
-              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.43 • sem gravação no Supabase</span>
+              <span className="hidden rounded-full border border-amber-300/60 bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-800 md:inline-flex">MODO TESTE • v2.0.44 • sem gravação no Supabase</span>
               <Button variant="quiet" size="sm" onClick={() => { if (confirm("Zerar todos os dados do perfil de teste neste navegador?")) { resetTestDb(); window.location.reload(); } }}>Zerar testes</Button>
             </>}
             <Button variant="quiet" size="icon" className="rounded-full"><Bell /></Button>
@@ -733,7 +733,7 @@ function PatientsPage({ patients, appointments, services, onNew, onEdit, onRecor
               <span className="grid size-11 shrink-0 place-items-center rounded-full bg-accent text-xs font-semibold">{p.initials}</span>
               <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{p.full_name}</p><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{p.phone || p.email || "Sem contato informado"}</p><p className="mt-1 text-[10px] font-medium text-primary">{patientCareProfile(p.birth_date).age != null ? `${patientCareProfile(p.birth_date).age} anos • ${patientCareProfile(p.birth_date).label}` : patientCareProfile(p.birth_date).label}</p></div><StatusBadge status={p.active ? "Ativo" : "Pausado"} /></div></div>
             </div>
-            <div className="mt-4 rounded-xl bg-card/70 p-3"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Contratação</p><p className="mt-1 text-xs font-medium">{p.billing_model === "package" ? `Pacote / plano ${p.package_amount ? money(p.package_amount) : ""}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</p><p className="mt-1 text-[10px] text-muted-foreground">{p.billing_model === "package" ? p.package_payment_mode === "installments" && p.package_installments ? `${p.package_installments}x • 1º vencimento ${p.package_first_due_date ? dateLabel(p.package_first_due_date) : "não informado"}` : "Pagamento à vista" : "Cobrança vinculada a cada atendimento"}</p></div>
+            <div className="mt-4 rounded-xl bg-card/70 p-3"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Contratação</p><p className="mt-1 text-xs font-medium">{p.billing_model === "package" ? `Pacote / plano ${p.package_amount ? money(p.package_amount) : ""}` : `Por sessão ${p.session_amount ? money(p.session_amount) : ""}`}</p><p className="mt-1 text-[10px] text-muted-foreground">{p.billing_model === "package" ? `${p.package_session_count ? `${p.package_session_count} sessão(ões) • ` : ""}${p.package_payment_mode === "installments" && p.package_installments ? `${p.package_installments}x • 1º vencimento ${p.package_first_due_date ? dateLabel(p.package_first_due_date) : "não informado"}` : "Pagamento à vista"}` : "Cobrança vinculada a cada atendimento"}</p></div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-center"><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Sessões</p><p className="mt-1 text-sm font-semibold">{related.length}</p></div><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Realizadas</p><p className="mt-1 text-sm font-semibold">{completed}</p></div><div className="rounded-xl border border-border/70 p-2"><p className="text-[9px] text-muted-foreground">Próximas</p><p className="mt-1 text-sm font-semibold">{upcoming}</p></div></div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3"><span className="flex items-center gap-1 text-[10px] font-medium text-primary">Ver sessões e contratação <ChevronRight className="size-3" /></span><div className="flex flex-wrap gap-1" onClick={(event) => event.stopPropagation()}><Button variant="quiet" size="sm" onClick={() => onRecord(p)}><LockKeyhole /> Prontuário</Button><Button variant="quiet" size="sm" onClick={() => onEdit(p)}><Pencil /> Editar</Button><Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={async () => { if (confirm(`Arquivar ${p.full_name}? O histórico clínico e financeiro será preservado.`)) { await deletePatient(p.id); await onChanged(); } }}><Trash2 /> Arquivar</Button></div></div>
           </article>;
@@ -758,7 +758,7 @@ function PatientDetailsModal({ patient, appointments, onClose, onEdit, onArchive
     <ModalHeader title={patient.full_name} subtitle="Contratação, sessões vinculadas e acesso ao prontuário." onClose={onClose} />
     <div className="p-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <div className="rounded-2xl border border-border bg-background/55 p-4"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Modelo contratado</p><p className="mt-2 text-sm font-semibold">{patient.billing_model === "package" ? "Pacote / plano" : "Por sessão"}</p><p className="mt-1 text-[10px] text-muted-foreground">{patient.billing_model === "package" ? `${patient.package_amount ? money(patient.package_amount) : "Valor não informado"}${patient.package_payment_mode === "installments" && patient.package_installments ? ` • ${patient.package_installments}x` : " • à vista"}` : patient.session_amount ? `${money(patient.session_amount)} por sessão` : "Valor não informado"}</p></div>
+        <div className="rounded-2xl border border-border bg-background/55 p-4"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Modelo contratado</p><p className="mt-2 text-sm font-semibold">{patient.billing_model === "package" ? "Pacote / plano" : "Por sessão"}</p><p className="mt-1 text-[10px] text-muted-foreground">{patient.billing_model === "package" ? `${patient.package_amount ? money(patient.package_amount) : "Valor não informado"}${patient.package_session_count ? ` • ${patient.package_session_count} sessão(ões)` : ""}${patient.package_payment_mode === "installments" && patient.package_installments ? ` • ${patient.package_installments}x` : " • à vista"}` : patient.session_amount ? `${money(patient.session_amount)} por sessão` : "Valor não informado"}</p></div>
         <MiniFeature icon={<Users />} title={patientCareProfile(patient.birth_date).label} text={patientCareProfile(patient.birth_date).age != null ? `${patientCareProfile(patient.birth_date).age} anos • nasc. ${dateLabel(patient.birth_date!)}` : "Cadastre a data de nascimento"} />
         <MiniFeature icon={<BadgeCheck />} title="Realizadas" text={String(completed)} />
         <MiniFeature icon={<CalendarDays />} title="Próximas" text={String(upcoming)} />
@@ -1555,6 +1555,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   const [packageAmount, setPackageAmount] = useState(patient?.package_amount?.toString().replace(".", ",") ?? "");
   const [packagePaymentMode, setPackagePaymentMode] = useState<"single" | "installments">(patient?.package_payment_mode ?? "single");
   const [packageInstallments, setPackageInstallments] = useState(patient?.package_installments ?? 2);
+  const [packageSessionCount, setPackageSessionCount] = useState(patient?.package_session_count ?? 4);
   const [packageFirstDueDate, setPackageFirstDueDate] = useState(patient?.package_first_due_date ?? isoDateLocal());
   const [packageInitialStatus, setPackageInitialStatus] = useState<"pending" | "paid">("pending");
   const [packageReceivedAt, setPackageReceivedAt] = useState(isoDateLocal());
@@ -1586,6 +1587,8 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   const parsedPackageAmountPreview = Number(packageAmount.replace(",", ".")) || 0;
   const effectiveInstallmentCount = packagePaymentMode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(packageInstallments || 1)));
   const installmentPreview = packageInstallmentPreview(parsedPackageAmountPreview, effectiveInstallmentCount, packageFirstDueDate);
+  const effectiveSessionCount = Math.max(1, Math.min(31, Math.trunc(packageSessionCount || 1)));
+  const packagePerSession = parsedPackageAmountPreview > 0 ? parsedPackageAmountPreview / effectiveSessionCount : 0;
 
   const save = async () => {
     if (!name.trim()) return;
@@ -1614,6 +1617,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
           total_amount: parsedPackageAmount,
           payment_mode: packagePaymentMode,
           installment_count: effectiveInstallmentCount,
+          session_count: effectiveSessionCount,
           first_due_date: packageFirstDueDate,
           initial_status: packageInitialStatus,
           received_at: packageInitialStatus === "paid" ? packageReceivedAt : null,
@@ -1662,7 +1666,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
       <FieldEdit label="CPF" value={cpf} onChange={(value) => setCpf(formatCpf(value))} />
       <div className="sm:col-span-2 rounded-2xl border border-primary/20 bg-primary/5 p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div><p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Nascimento e tipo de atendimento</p><p className="mt-1 text-[10px] text-muted-foreground">Informe a data de nascimento. A idade e o tipo infantil/adulto são calculados automaticamente.</p></div>
+          <div><p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Nascimento e tipo de atendimento</p><p className="mt-1 text-[10px] text-muted-foreground">Informe a data de nascimento. A idade e o tipo infantil/adolescente/adulto são calculados automaticamente.</p></div>
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data de nascimento</span><input type="date" max={isoDateLocal()} value={birthDate} onChange={(e)=>setBirthDate(e.target.value)} className="input-finance" /></label>
@@ -1677,6 +1681,7 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
       {billing === "session" && <FieldEdit label="Valor padrão da sessão" value={sessionAmount} onChange={setSessionAmount} />}
       {billing === "package" && <>
         <FieldEdit label="Valor total do pacote / plano" value={packageAmount} onChange={setPackageAmount} />
+        <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Quantidade de sessões do pacote</span><input type="number" min={1} max={31} value={packageSessionCount} onChange={(e)=>setPackageSessionCount(Number(e.target.value))} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">{packagePerSession > 0 ? `${effectiveSessionCount} sessão(ões) • ${money(packagePerSession)} por sessão` : "Informe o valor para calcular."}</span></label>
         <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Forma de pagamento</span><select value={packagePaymentMode} onChange={(e)=>setPackagePaymentMode(e.target.value as "single" | "installments")} className="input-finance"><option value="single">À vista</option><option value="installments">Parcelado</option></select></label>
         {packagePaymentMode === "installments" && <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Número de parcelas</span><input type="number" min={1} max={60} value={packageInstallments} onChange={(e)=>setPackageInstallments(Number(e.target.value))} className="input-finance" /></label>}
         <label><span className="mb-1.5 block text-[10px] text-muted-foreground">{packagePaymentMode === "single" ? "Data prevista de pagamento" : "Vencimento da 1ª parcela"}</span><input type="date" value={packageFirstDueDate} onChange={(e)=>setPackageFirstDueDate(e.target.value)} className="input-finance" /></label>
@@ -1740,6 +1745,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, defaul
   const [status, setStatus] = useState<AppointmentStatus>(appointment?.status ?? "scheduled");
   const [serviceId, setServiceId] = useState(initialServiceId);
   const [amount, setAmount] = useState(initialAmount);
+  const [chargeNoShow, setChargeNoShow] = useState(appointment?.status === "no_show" ? Number(appointment.amount || 0) > 0 : true);
   const [billingMode, setBillingMode] = useState<"single" | "installments">("single");
   const [installmentCount, setInstallmentCount] = useState(2);
   const [firstDueDate, setFirstDueDate] = useState(localValue.slice(0, 10));
@@ -1753,7 +1759,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, defaul
   const selectedService = serviceOptions.find((item) => item.id === serviceId) ?? null;
   const selectedPatient = patients.find((item) => item.id === patientId) ?? null;
   const isPackageSession = Boolean(selectedPatient?.billing_model === "package" && selectedService?.kind === "session");
-  const numericAmount = isPackageSession ? 0 : Number(amount.replace(",",".")) || 0;
+  const numericAmount = isPackageSession || (status === "no_show" && !chargeNoShow) ? 0 : Number(amount.replace(",",".")) || 0;
   const canCharge = !isPackageSession && numericAmount > 0 && status !== "cancelled";
   const effectiveInstallmentCount = billingMode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(installmentCount || 2)));
   const singlePayment = currentPayments.length === 1 ? currentPayments[0] ?? null : null;
@@ -1872,12 +1878,13 @@ function AppointmentModal({ patients, services, appointment, defaultDate, defaul
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
       <FieldEdit label="Paciente / cliente" value={name} onChange={setName} />
       {selectedPatient?.birth_date && <div className="rounded-xl border border-border bg-background/45 px-3 py-2 text-xs sm:col-span-2"><span className="font-medium">{patientCareProfile(selectedPatient.birth_date).label}</span><span className="ml-2 text-muted-foreground">• {patientCareProfile(selectedPatient.birth_date).age} anos • nascimento {dateLabel(selectedPatient.birth_date)}</span></div>}
-      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>changeWhen(e.target.value)} className="input-finance" /></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>changeWhen(e.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Pode registrar atendimentos passados ou agendar datas futuras.</span></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Modalidade</span><select value={modality} onChange={(e)=>setModality(e.target.value as "presential"|"online")} className="input-finance"><option value="presential">Presencial</option><option value="online">On-line</option></select></label>
-      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do atendimento</span><select value={status} onChange={(e)=>setStatus(e.target.value as AppointmentStatus)} className="input-finance"><option value="scheduled">Agendada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="no_show">Falta</option><option value="cancelled">Cancelada</option></select></label>
+      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status do atendimento</span><select value={status} onChange={(e)=>{ const next=e.target.value as AppointmentStatus; setStatus(next); if(next === "no_show" && appointment?.status !== "no_show") setChargeNoShow(false); }} className="input-finance"><option value="scheduled">Agendada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="no_show">Falta</option><option value="cancelled">Cancelada</option></select></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Serviço</span><select value={serviceId} onChange={(e)=>selectService(e.target.value)} className="input-finance" disabled={serviceOptions.length === 0}>{serviceOptions.length === 0 ? <option value="">Cadastre um serviço nas Configurações</option> : serviceOptions.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
-      {isPackageSession ? <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="Incluído no pacote" disabled className="input-finance opacity-70" /></label> : <FieldEdit label="Valor total" value={amount} onChange={setAmount} />}
+      {isPackageSession ? <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="Incluído no pacote" disabled className="input-finance opacity-70" /></label> : status === "no_show" && !chargeNoShow ? <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Valor</span><input value="0,00" disabled className="input-finance opacity-70" /></label> : <FieldEdit label="Valor total" value={amount} onChange={setAmount} />}
+      {status === "no_show" && !isPackageSession && <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] text-muted-foreground">Cobrar a falta?</span><select value={chargeNoShow ? "yes" : "no"} onChange={(e)=>{ const next=e.target.value === "yes"; setChargeNoShow(next); if(next && (!amount || Number(amount.replace(",", ".")) <= 0) && selectedPatient?.session_amount) setAmount(String(selectedPatient.session_amount).replace(".", ",")); }} className="input-finance"><option value="no">Não cobrar — valor R$ 0,00</option><option value="yes">Cobrar normalmente</option></select></label>}
 
       <div className="rounded-2xl border border-border bg-accent/30 p-4 sm:col-span-2">
         <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold">Cobrança deste atendimento</p><p className="mt-1 text-[10px] leading-4 text-muted-foreground">Defina se o valor será cobrado de uma vez ou dividido em parcelas.</p></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${isPackageSession || !canCharge ? "bg-muted text-muted-foreground" : "bg-primary/10 text-primary"}`}>{badgeText}</span></div>

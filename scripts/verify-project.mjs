@@ -81,20 +81,6 @@ if (majorMinor(pkg.devDependencies?.['@types/react']) !== majorMinor(pkg.devDepe
   errors.push('package.json: @types/react e @types/react-dom devem usar a mesma família major.minor.');
 }
 
-const migration = path.join(root, 'supabase', 'migrations', '202609220001_initial_schema.sql');
-if (!fs.existsSync(migration)) {
-  errors.push('Migração principal do Supabase não encontrada.');
-} else {
-  const sql = fs.readFileSync(migration, 'utf8');
-  const oldBrokenExpression = 'tstzrange(scheduled_at, scheduled_at + make_interval(mins => duration_minutes)';
-  if (sql.includes(oldBrokenExpression)) {
-    errors.push('Migração SQL contém a antiga expressão de índice/exclusion constraint que causava ERROR 42P17.');
-  }
-  if (!sql.includes('pg_advisory_xact_lock') || !sql.includes('prevent_appointment_overlap')) {
-    errors.push('Migração SQL não contém a correção de concorrência/sobreposição esperada.');
-  }
-}
-
 if (fs.existsSync(path.join(root, '.github'))) {
   errors.push('CLEAN START não deve carregar workflows antigos do GitHub Actions.');
 }

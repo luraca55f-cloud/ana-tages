@@ -49,6 +49,7 @@ export type PatientBilling = {
   package_plan_id: string | null;
   package_payment_mode: PackagePaymentMode | null;
   package_installments: number | null;
+  package_session_count: number | null;
   package_first_due_date: string | null;
   package_initial_status?: "pending" | "paid";
   package_received_at?: string | null;

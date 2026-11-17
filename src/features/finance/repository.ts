@@ -24,6 +24,7 @@ type PackagePlanSummary = {
   patient_id: string;
   payment_mode: "single" | "installments";
   installment_count: number;
+  session_count: number | null;
   first_due_date: string;
 };
 
@@ -92,7 +93,7 @@ export async function loadFinanceBundle(month: string, includeReceivableDetails 
     supabase.from("billing_entries").select(billingFields).in("status", ["pending", "partial"]).order("due_date", { ascending: true }).limit(MAX_ROWS),
     supabase.from("expenses").select("id,category,description,competence_date,due_date,amount,recurrence,status,paid_at,fixed_rule_id").gte("competence_date", start).lt("competence_date", endExclusive).order("competence_date", { ascending: false }).limit(MAX_ROWS),
     supabase.from("patients").select("id,full_name,cpf,billing_model,session_amount,package_amount,package_timing,billing_day").eq("active", true).is("archived_at", null).order("full_name", { ascending: true }).limit(MAX_ROWS),
-    supabase.from("package_plans").select("id,patient_id,total_amount,payment_mode,installment_count,first_due_date,status").eq("status", "active").limit(MAX_ROWS),
+    supabase.from("package_plans").select("id,patient_id,total_amount,payment_mode,installment_count,session_count,first_due_date,status").eq("status", "active").limit(MAX_ROWS),
   ]);
 
   const firstError = billedResult.error ?? receivedResult.error ?? receivablesResult.error ?? expensesResult.error ?? patientsResult.error ?? packagePlansResult.error;
@@ -107,6 +108,7 @@ export async function loadFinanceBundle(month: string, includeReceivableDetails 
       package_plan_id: plan?.id ?? null,
       package_payment_mode: plan?.payment_mode ?? null,
       package_installments: plan?.installment_count ?? null,
+      package_session_count: plan?.session_count ?? null,
       package_first_due_date: plan?.first_due_date ?? null,
     } as PatientBilling;
   });
@@ -147,13 +149,14 @@ export async function createRevenue(input: {
   due_date: string | null;
   amount: number;
   status: "pending" | "paid";
+  received_at?: string | null;
   payment_method?: PaymentMethod | null;
   client_request_id?: string;
 } ) {
   if (isTestMode()) return testCreateRevenue(input);
   if (!supabase) throw new Error("Supabase não configurado");
   const amount = cleanMoney(input.amount);
-  const { error } = await supabase.rpc("create_manual_revenue", {
+  const { error } = await supabase.rpc("create_manual_revenue_v2", {
     p_source_type: input.source_type,
     p_client_name: cleanText(input.client_name, 160),
     p_description: cleanText(input.description, 500),
@@ -162,6 +165,7 @@ export async function createRevenue(input: {
     p_due_date: input.due_date || null,
     p_amount: amount,
     p_paid: input.status === "paid",
+    p_received_at: input.status === "paid" ? input.received_at ?? input.issued_at : null,
     p_payment_method: input.status === "paid" ? input.payment_method ?? null : null,
     p_client_request_id: input.client_request_id ?? crypto.randomUUID(),
   });
@@ -325,11 +329,13 @@ export async function updatePatientBilling(input: PatientBilling): Promise<void>
     if (total <= 0 || !input.package_first_due_date) throw new Error("Informe valor total e primeiro vencimento do pacote/plano.");
     const paymentMode = input.package_payment_mode === "installments" ? "installments" : "single";
     const count = paymentMode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(Number(input.package_installments ?? 1))));
-    const planResult = await supabase.rpc("save_patient_package_plan_v2", {
+    const sessionCount = Math.max(1, Math.min(31, Math.trunc(Number(input.package_session_count ?? 1))));
+    const planResult = await supabase.rpc("save_patient_package_plan_v3", {
       p_patient_id: input.id,
       p_total_amount: total,
       p_payment_mode: paymentMode,
       p_installment_count: count,
+      p_session_count: sessionCount,
       p_first_due_date: input.package_first_due_date,
       p_initial_status: input.package_initial_status === "paid" ? "paid" : "pending",
       p_received_at: input.package_initial_status === "paid" ? input.package_received_at ?? null : null,

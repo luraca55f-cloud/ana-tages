@@ -18,6 +18,7 @@ export type PatientRow = {
   package_plan_id: string | null;
   package_payment_mode: PackagePaymentMode | null;
   package_installments: number | null;
+  package_session_count: number | null;
   package_first_due_date: string | null;
   notes_admin: string | null;
   archived_at: string | null;
@@ -133,6 +134,7 @@ export type PackagePlanRow = {
   total_amount: number;
   payment_mode: PackagePaymentMode;
   installment_count: number;
+  session_count: number | null;
   first_due_date: string;
   status: "active" | "cancelled" | "completed";
   created_at: string;

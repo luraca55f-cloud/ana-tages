@@ -74,6 +74,17 @@ function normalizeCpf(value: string | null | undefined) {
   return digits;
 }
 
+function normalizeBirthDate(value: string | null | undefined) {
+  if (!value) return null;
+  const normalized = value.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) throw new Error("Data de nascimento inválida");
+  const date = new Date(`${normalized}T12:00:00`);
+  const today = new Date();
+  const min = new Date("1900-01-01T12:00:00");
+  if (Number.isNaN(date.getTime()) || date < min || date > today) throw new Error("Data de nascimento inválida");
+  return normalized;
+}
+
 function safeMoney(value: number | null | undefined) {
   const number = Number(value ?? 0);
   if (!Number.isFinite(number) || number < 0 || number > 1_000_000) {
@@ -112,7 +123,7 @@ export async function listPatients() {
       .limit(MAX_ROWS),
     client
       .from("package_plans")
-      .select("id,patient_id,total_amount,payment_mode,installment_count,first_due_date,status,created_at,updated_at")
+      .select("id,patient_id,total_amount,payment_mode,installment_count,session_count,first_due_date,status,created_at,updated_at")
       .eq("status", "active")
       .limit(MAX_ROWS),
   ]);
@@ -122,13 +133,14 @@ export async function listPatients() {
     ((plansResult.data ?? []) as PackagePlanRow[]).map((plan) => [plan.patient_id, plan]),
   );
   return (patientsResult.data ?? []).map((raw) => {
-    const patient = raw as Omit<PatientRow, "package_plan_id" | "package_payment_mode" | "package_installments" | "package_first_due_date">;
+    const patient = raw as Omit<PatientRow, "package_plan_id" | "package_payment_mode" | "package_installments" | "package_session_count" | "package_first_due_date">;
     const plan = planByPatient.get(patient.id);
     return {
       ...patient,
       package_plan_id: plan?.id ?? null,
       package_payment_mode: plan?.payment_mode ?? null,
       package_installments: plan?.installment_count ?? null,
+      package_session_count: plan?.session_count ?? null,
       package_first_due_date: plan?.first_due_date ?? null,
     } as PatientRow;
   });
@@ -146,7 +158,7 @@ export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow
     cpf: normalizeCpf(input.cpf),
     phone: cleanText(input.phone, 40),
     email: cleanText(input.email, 254),
-    birth_date: input.birth_date ?? null,
+    birth_date: normalizeBirthDate(input.birth_date),
     active: input.active ?? true,
     billing_model: billingModel,
     session_amount: billingModel === "session" && input.session_amount != null ? safeMoney(input.session_amount) : null,
@@ -158,11 +170,11 @@ export async function createPatient(input: Partial<PatientRow> & Pick<PatientRow
   if (error) {
     if ((error as { code?: string }).code === "23505") {
       const existing = await client.from("patients").select("id,full_name,cpf,phone,email,birth_date,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").eq("client_request_id", clientRequestId).maybeSingle();
-      if (!existing.error && existing.data) return { ...existing.data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
+      if (!existing.error && existing.data) return { ...existing.data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_session_count: null, package_first_due_date: null } as PatientRow;
     }
     throw error;
   }
-  return { ...data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
+  return { ...data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_session_count: null, package_first_due_date: null } as PatientRow;
 }
 
 export async function updatePatient(id: string, patch: Partial<PatientRow>) {
@@ -173,7 +185,7 @@ export async function updatePatient(id: string, patch: Partial<PatientRow>) {
   if (patch.cpf !== undefined) allowed["cpf"] = normalizeCpf(patch.cpf);
   if (patch.phone !== undefined) allowed["phone"] = cleanText(patch.phone, 40);
   if (patch.email !== undefined) allowed["email"] = cleanText(patch.email, 254);
-  if (patch.birth_date !== undefined) allowed["birth_date"] = patch.birth_date || null;
+  if (patch.birth_date !== undefined) allowed["birth_date"] = normalizeBirthDate(patch.birth_date);
   if (patch.active !== undefined) allowed["active"] = Boolean(patch.active);
   if (patch.billing_model !== undefined) allowed["billing_model"] = patch.billing_model === "package" ? "package" : "session";
   if (patch.session_amount !== undefined) allowed["session_amount"] = patch.session_amount == null ? null : safeMoney(patch.session_amount);
@@ -183,7 +195,7 @@ export async function updatePatient(id: string, patch: Partial<PatientRow>) {
   if (patch.notes_admin !== undefined) allowed["notes_admin"] = cleanText(patch.notes_admin, 4000);
   const { data, error } = await client.from("patients").update(allowed).eq("id", id).is("archived_at", null).select("id,full_name,cpf,phone,email,birth_date,active,billing_model,session_amount,package_amount,package_timing,billing_day,notes_admin,archived_at,created_at").single();
   if (error) throw error;
-  return { ...data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_first_due_date: null } as PatientRow;
+  return { ...data, package_plan_id: null, package_payment_mode: null, package_installments: null, package_session_count: null, package_first_due_date: null } as PatientRow;
 }
 
 // Pacote/plano financeiro é separado do cadastro do paciente para preservar histórico.
@@ -193,6 +205,7 @@ export async function savePatientPackagePlan(input: {
   total_amount: number;
   payment_mode: "single" | "installments";
   installment_count: number;
+  session_count?: number;
   first_due_date: string;
   initial_status?: "pending" | "paid";
   received_at?: string | null;
@@ -204,14 +217,16 @@ export async function savePatientPackagePlan(input: {
   const total = safeMoney(input.total_amount);
   if (total <= 0) throw new Error("Informe o valor total do pacote/plano.");
   const installmentCount = input.payment_mode === "single" ? 1 : Math.max(1, Math.min(60, Math.trunc(input.installment_count)));
+  const sessionCount = Math.max(1, Math.min(31, Math.trunc(input.session_count ?? 1)));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.first_due_date)) throw new Error("Informe a data do primeiro pagamento.");
   const initialStatus = input.initial_status === "paid" ? "paid" : "pending";
   if (initialStatus === "paid" && !input.received_at) throw new Error("Informe a data do recebimento do pacote.");
-  const { data, error } = await client.rpc("save_patient_package_plan_v2", {
+  const { data, error } = await client.rpc("save_patient_package_plan_v3", {
     p_patient_id: input.patient_id,
     p_total_amount: total,
     p_payment_mode: input.payment_mode,
     p_installment_count: installmentCount,
+    p_session_count: sessionCount,
     p_first_due_date: input.first_due_date,
     p_initial_status: initialStatus,
     p_received_at: initialStatus === "paid" ? input.received_at : null,
