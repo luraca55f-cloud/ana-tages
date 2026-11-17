@@ -1807,6 +1807,10 @@ function AppointmentModal({ patients, services, appointment, defaultDate, defaul
   };
   const selectPatient = (id: string) => {
     setPatientId(id);
+    if (!id) {
+      setName(appointment && !appointment.patient_id ? appointment.patient_name : "");
+      return;
+    }
     const selected = patients.find((item)=>item.id===id);
     if (selected) { setName(selected.full_name); applyPatientSessionAmount(selected, selectedService); }
   };
@@ -1875,8 +1879,8 @@ function AppointmentModal({ patients, services, appointment, defaultDate, defaul
   return <ModalShell onClose={onClose} width="max-w-3xl">
     <ModalHeader title={appointment ? "Editar atendimento" : "Novo atendimento"} subtitle="Agenda, sessão e cobrança ficam vinculados no mesmo atendimento." onClose={onClose} />
     <div className="grid gap-4 p-5 sm:grid-cols-2">
-      <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{patients.map((p)=><option key={p.id} value={p.id}>{p.full_name}</option>)}</select></label>
-      <FieldEdit label="Paciente / cliente" value={name} onChange={setName} />
+      <label className="sm:col-span-2"><span className="mb-1.5 block text-[10px] font-medium text-foreground">Selecionar paciente cadastrado</span><select value={patientId} onChange={(e)=>selectPatient(e.target.value)} className="input-finance"><option value="">Outro / não cadastrado</option>{[...patients].sort((a,b)=>a.full_name.localeCompare(b.full_name, "pt-BR")).map((p)=><option key={p.id} value={p.id}>{p.full_name}{p.cpf ? ` • ${p.cpf}` : ""}</option>)}</select><span className="mt-1 block text-[9px] text-muted-foreground">Quem já foi cadastrado deve ser selecionado aqui. Use “Outro / não cadastrado” apenas para atendimento avulso.</span></label>
+      {!patientId && <div className="sm:col-span-2"><FieldEdit label="Paciente / cliente não cadastrado" value={name} onChange={setName} /></div>}
       {selectedPatient?.birth_date && <div className="rounded-xl border border-border bg-background/45 px-3 py-2 text-xs sm:col-span-2"><span className="font-medium">{patientCareProfile(selectedPatient.birth_date).label}</span><span className="ml-2 text-muted-foreground">• {patientCareProfile(selectedPatient.birth_date).age} anos • nascimento {dateLabel(selectedPatient.birth_date)}</span></div>}
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data e hora</span><input type="datetime-local" value={when} onChange={(e)=>changeWhen(e.target.value)} className="input-finance" /><span className="mt-1 block text-[9px] text-muted-foreground">Pode registrar atendimentos passados ou agendar datas futuras.</span></label>
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Duração (min)</span><input type="number" min={10} max={240} value={duration} onChange={(e)=>setDuration(Number(e.target.value))} className="input-finance" /></label>
