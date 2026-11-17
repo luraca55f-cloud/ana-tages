@@ -1808,7 +1808,7 @@ function AppointmentModal({ patients, services, appointment, defaultDate, defaul
   const selectPatient = (id: string) => {
     setPatientId(id);
     if (!id) {
-      setName(appointment && !appointment.patient_id ? appointment.patient_name : "");
+      setName((appointment && !appointment.patient_id ? appointment.patient_name : "") ?? "");
       return;
     }
     const selected = patients.find((item)=>item.id===id);
