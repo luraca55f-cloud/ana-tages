@@ -6,6 +6,7 @@ import {
   testDeleteExpense,
   testDeleteRevenueReceipt,
   testDeleteManualRevenue,
+  testCancelOpenBilling,
   testLoadFinanceBundle,
   testLoadFinanceYear,
   testMarkExpensePaid,
@@ -357,4 +358,11 @@ export async function updatePatientBilling(input: PatientBilling): Promise<void>
   }).eq("id", input.id).is("archived_at", null);
   if (error) throw error;
   return;
+}
+
+export async function cancelOpenBilling(id: string) {
+  if (isTestMode()) return testCancelOpenBilling(id);
+  if (!supabase) throw new Error("Supabase não configurado");
+  const { error } = await supabase.rpc("cancel_open_billing_v2046", { p_id: id });
+  if (error) throw new Error(error.message);
 }

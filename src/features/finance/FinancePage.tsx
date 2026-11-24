@@ -24,7 +24,7 @@ import { cancelPatientPackagePlan, getAppSettings } from "../clinic/repository";
 import type { AppSettingsRow } from "../clinic/types";
 import { isSupabaseConfigured } from "../../lib/supabase";
 import { paymentMethodLabels, printCollectionNotice, printFinancialSummary, printPaymentReceipt } from "./documents";
-import { createExpense, createRevenue, deleteExpense, deleteManualRevenue, deleteRevenueReceipt, loadFinanceBundle, loadFinanceYear, markExpensePaid, updateExpense, updateManualRevenue, updatePatientBilling, updateRevenueReceipt } from "./repository";
+import { cancelOpenBilling, createExpense, createRevenue, deleteExpense, deleteManualRevenue, deleteRevenueReceipt, loadFinanceBundle, loadFinanceYear, markExpensePaid, updateExpense, updateManualRevenue, updatePatientBilling, updateRevenueReceipt } from "./repository";
 import type { BillingEntry, ExpenseEntry, FinanceBundle, FinanceYearMonth, PatientBilling, PatientIdentity, PaymentMethod, RevenueSource } from "./types";
 
 const sourceLabels: Record<RevenueSource, string> = {
@@ -572,6 +572,17 @@ export function FinancePage({
     }
   };
 
+  const [cancellingBilling, setCancellingBilling] = useState<string | null>(null);
+  const cancelDebt = async (entry: BillingEntry) => {
+    if (cancellingBilling || outstanding(entry) <= 0 || Number(entry.received_amount || 0) !== 0) return;
+    if (!window.confirm(`Cancelar somente esta cobrança de ${entry.client_name}?\n${entry.description} • ${money(Number(entry.amount))} • vencimento ${dateLabel(entry.due_date)}\nNenhum pagamento ou atendimento será excluído.`)) return;
+    setCancellingBilling(entry.id);
+    setError("");
+    try { await cancelOpenBilling(entry.id); await reload(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Não foi possível cancelar a cobrança."); }
+    finally { setCancellingBilling(null); }
+  };
+
   const editEntrySource = (entry: BillingEntry) => {
     if (isManualRevenue(entry)) {
       startRevenueEdit(entry);
@@ -877,7 +888,7 @@ export function FinancePage({
           <div className="mt-5 overflow-x-auto">
             <table className="w-full min-w-[1180px] text-left">
               <thead><tr className="border-b border-border text-[10px] uppercase text-muted-foreground"><th className="px-3 py-3 font-medium">Competência</th><th className="px-3 py-3 font-medium">Paciente / cliente</th><th className="px-3 py-3 font-medium">Origem</th><th className="px-3 py-3 font-medium">Descrição</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 text-right font-medium">Faturado</th><th className="px-3 py-3 text-right font-medium">Ações</th></tr></thead>
-              <tbody>{data.billed.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.client_name}</td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4 text-xs text-muted-foreground">{entry.description}</td><td className="px-3 py-4"><Status status={entry.status} /></td><td className="px-3 py-4 text-right text-xs font-semibold">{money(Number(entry.amount))}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => editEntrySource(entry)}><Pencil /> {editEntryLabel(entry)}</Button>{Number(entry.received_amount || 0) > 0 && <Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry)}><ReceiptText /> Editar recebimento</Button>}{Number(entry.received_amount || 0) <= 0 && entry.status !== "cancelled" && <Button size="sm" variant="quiet" onClick={() => receive(entry)}><Check /> Receber</Button>}{isManualRevenue(entry) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry)}><Trash2 /> Excluir</Button>}</div></td></tr>)}</tbody>
+              <tbody>{data.billed.map((entry) => <tr key={entry.id} className="border-b border-border/70 last:border-0"><td className="px-3 py-4 text-xs text-muted-foreground">{dateLabel(entry.competence_date)}</td><td className="px-3 py-4 text-[13px] font-medium">{entry.client_name}</td><td className="px-3 py-4 text-xs">{sourceLabels[entry.source_type]}</td><td className="px-3 py-4 text-xs text-muted-foreground">{entry.description}</td><td className="px-3 py-4"><Status status={entry.status} /></td><td className="px-3 py-4 text-right text-xs font-semibold">{money(Number(entry.amount))}</td><td className="px-3 py-4"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => editEntrySource(entry)}><Pencil /> {editEntryLabel(entry)}</Button>{Number(entry.received_amount || 0) > 0 && <Button size="sm" variant="quiet" onClick={() => setEditingReceipt(entry)}><ReceiptText /> Editar recebimento</Button>}{Number(entry.received_amount || 0) <= 0 && entry.status !== "cancelled" && <Button size="sm" variant="quiet" onClick={() => receive(entry)}><Check /> Receber</Button>}{entry.status === "pending" && Number(entry.received_amount || 0) === 0 ? <Button size="sm" variant="ghost" disabled={cancellingBilling !== null} className="text-destructive hover:text-destructive" onClick={() => void cancelDebt(entry)}><Trash2 /> {cancellingBilling === entry.id ? "Cancelando..." : "Excluir débito"}</Button> : isManualRevenue(entry) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry)}><Trash2 /> Excluir</Button>}</div></td></tr>)}</tbody>
             </table>
             {data.billed.length === 0 && <p className="py-10 text-center text-xs text-muted-foreground">Nenhum faturamento neste período.</p>}
           </div>
@@ -990,7 +1001,7 @@ export function FinancePage({
                           <td className="px-3 py-3 text-xs text-emerald-700">{money(Number(entry.received_amount || 0))}</td>
                           <td className="px-3 py-3 text-xs font-semibold">{money(outstanding(entry))}</td>
                           <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-[10px] font-medium ${state.className}`}>{state.label}</span></td>
-                          <td className="px-4 py-3"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => editEntrySource(entry)}><Pencil /> {editEntryLabel(entry)}</Button>{Number(entry.received_amount || 0) > 0 && <Button size="sm" variant="quiet" onClick={() => issueReceipt(entry)}><ReceiptText /> Recibo</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => issueCollectionNotice(entry)}><FileText /> Nota de cobrança</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => receive(entry)}><Check /> Baixar</Button>}{isManualRevenue(entry) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry)}><Trash2 /> Excluir</Button>}{!isOpen && Number(entry.received_amount || 0) <= 0 && <span className="text-[10px] text-muted-foreground">Concluída</span>}</div></td>
+                          <td className="px-4 py-3"><div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="quiet" onClick={() => editEntrySource(entry)}><Pencil /> {editEntryLabel(entry)}</Button>{Number(entry.received_amount || 0) > 0 && <Button size="sm" variant="quiet" onClick={() => issueReceipt(entry)}><ReceiptText /> Recibo</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => issueCollectionNotice(entry)}><FileText /> Nota de cobrança</Button>}{isOpen && <Button size="sm" variant="quiet" onClick={() => receive(entry)}><Check /> Baixar</Button>}{entry.status === "pending" && Number(entry.received_amount || 0) === 0 ? <Button size="sm" variant="ghost" disabled={cancellingBilling !== null} className="text-destructive hover:text-destructive" onClick={() => void cancelDebt(entry)}><Trash2 /> {cancellingBilling === entry.id ? "Cancelando..." : "Excluir débito"}</Button> : isManualRevenue(entry) && <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => void removeManualRevenue(entry)}><Trash2 /> Excluir</Button>}{!isOpen && Number(entry.received_amount || 0) <= 0 && <span className="text-[10px] text-muted-foreground">Concluída</span>}</div></td>
                         </tr>;
                       })}
                     </tbody>

@@ -475,6 +475,7 @@ async function handleTestCenterApi(request: Request, env: Env): Promise<Response
           (not exists(select 1 from information_schema.columns where table_schema='public' and table_name='appointments' and column_name='service_name') or (has_column_privilege('authenticated', 'public.appointments', 'service_name', 'INSERT') and has_column_privilege('authenticated', 'public.appointments', 'service_name', 'UPDATE'))) as appointments_service_name_write,
           to_regclass('public.appointments') is not null as appointments,
           to_regclass('public.billing_entries') is not null as billing_entries,
+          to_regprocedure('public.cancel_open_billing_v2046(uuid)') is not null as fn_cancel_open_billing,
           to_regclass('public.expenses') is not null as expenses,
           to_regclass('public.package_plans') is not null as package_plans,
           exists(select 1 from information_schema.columns where table_schema='public' and table_name='package_plans' and column_name='session_count') as package_session_count,
@@ -510,7 +511,7 @@ async function handleTestCenterApi(request: Request, env: Env): Promise<Response
         { id: "database", label: "Conexão com o banco real", keys: ["patients"], okDetail: "Supabase respondeu à consulta somente leitura." },
         { id: "clinic-schema", label: "Pacientes, nascimento, agenda e materiais", keys: ["patients", "patients_birth_date", "patients_birth_date_write", "appointments", "appointments_service_name_write", "materials", "app_settings"], okDetail: "Estruturas clínicas essenciais e data de nascimento encontradas." },
         { id: "finance-schema", label: "Financeiro e parcelamentos", keys: ["billing_entries", "expenses", "package_plans", "package_session_count"], okDetail: "Tabelas financeiras essenciais encontradas." },
-        { id: "finance-routines", label: "Funções financeiras de edição, pacote e cobrança", keys: ["fn_ensure_appointment_billings", "fn_save_appointment_billing_plan", "fn_save_patient_package_plan_v3", "fn_cancel_patient_package_plan_v2", "fn_create_manual_revenue_v2", "fn_update_manual_revenue", "fn_delete_manual_revenue", "fn_create_expense", "fn_update_expense", "fn_delete_expense"], okDetail: "Funções financeiras esperadas estão instaladas." },
+        { id: "finance-routines", label: "Funções financeiras de edição, pacote e cobrança", keys: ["fn_ensure_appointment_billings", "fn_save_appointment_billing_plan", "fn_save_patient_package_plan_v3", "fn_cancel_patient_package_plan_v2", "fn_create_manual_revenue_v2", "fn_update_manual_revenue", "fn_delete_manual_revenue", "fn_cancel_open_billing", "fn_create_expense", "fn_update_expense", "fn_delete_expense"], okDetail: "Funções financeiras esperadas estão instaladas." },
         { id: "service-work", label: "Prestação de Serviço", keys: ["service_work_entries", "fn_create_service_work_entry"], okDetail: "Estrutura de prestação de serviço encontrada." },
         { id: "clinical-access", label: "Acesso ao prontuário sem loop de código", keys: ["fn_grant_clinical_access_session"], okDetail: "Rotina de acesso clínico instalada; validações v2.0.44 ativas." },
       ];

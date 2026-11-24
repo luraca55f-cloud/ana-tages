@@ -5,6 +5,7 @@ import {
   readTestDb,
   writeTestDb,
   testCancelPatientPackagePlan,
+  testCancelOpenBilling,
   testCreateAppointment,
   testCreateClinicalNote,
   testCreateExpense,
@@ -139,6 +140,13 @@ async function runLocalSmokeTests(): Promise<TestCheck[]> {
       testSaveAppointmentBillingPlan({ appointment_id: installmentAppointment.id, payment_mode: "installments", installment_count: 3, first_due_date: todayIso() });
       const installments = testListAppointmentPayments([installmentAppointment.id]);
       assertion(installments.length === 3, "O parcelamento 3x não gerou três cobranças.");
+      const unwanted = installments[0];
+      assertion(unwanted, "Parcela de teste ausente.");
+      testCancelOpenBilling(unwanted!.id);
+      assertion(testListAppointmentPayments([installmentAppointment.id]).length === 2, "Débito cancelado reapareceu.");
+      let blocked = false;
+      try { testCancelOpenBilling(paid[0]!.id); } catch { blocked = true; }
+      assertion(blocked, "Cancelamento de pagamento válido deveria ser bloqueado.");
 
       const noShow = testCreateAppointment({
         patient_id: patientId,

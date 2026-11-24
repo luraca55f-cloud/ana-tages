@@ -1660,20 +1660,20 @@ function PatientModal({ patient, services, onClose, onSaved }: { patient: Patien
   };
 
   return <ModalShell onClose={onClose} width="max-w-3xl">
-    <ModalHeader title={patient ? "Editar paciente" : "Novo paciente"} subtitle="Dados administrativos, cobrança e próximas sessões." onClose={onClose} />
+    <ModalHeader title={patient ? "Editar paciente" : "Novo paciente"} subtitle="Dados administrativos, cobrança e próximas sessões. • v2.0.46" onClose={onClose} />
     <div className="grid gap-4 p-5 sm:grid-cols-2">
-      <FieldEdit label="Nome completo" value={name} onChange={setName} />
-      <FieldEdit label="CPF" value={cpf} onChange={(value) => setCpf(formatCpf(value))} />
       <div className="sm:col-span-2 rounded-2xl border border-primary/20 bg-primary/5 p-4">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div><p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Nascimento e tipo de atendimento</p><p className="mt-1 text-[10px] text-muted-foreground">Informe a data de nascimento. A idade e o tipo infantil/adolescente/adulto são calculados automaticamente.</p></div>
+          <div><p className="text-sm font-semibold text-primary">Nascimento e tipo de atendimento</p><p className="mt-1 text-[10px] text-muted-foreground">Informe a data de nascimento. A idade e o tipo infantil/adolescente/adulto são calculados automaticamente.</p></div>
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data de nascimento</span><input type="date" max={isoDateLocal()} value={birthDate} onChange={(e)=>setBirthDate(e.target.value)} className="input-finance" /></label>
+          <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Data de nascimento</span><input type="date" max={isoDateLocal()} value={birthDate} onChange={(e)=>setBirthDate(e.target.value)} className="input-finance" aria-label="Data de nascimento" min="1900-01-01" /></label>
           <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Idade</span><input readOnly value={patientCareProfile(birthDate).age != null ? `${patientCareProfile(birthDate).age} anos` : ""} placeholder="Automática" className="input-finance bg-muted/35" /></label>
           <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Tipo de atendimento</span><input readOnly value={patientCareProfile(birthDate).age != null ? patientCareProfile(birthDate).label.replace("Atendimento ", "") : ""} placeholder="Definido pela idade" className="input-finance bg-muted/35" /></label>
         </div>
       </div>
+      <FieldEdit label="Nome completo" value={name} onChange={setName} />
+      <FieldEdit label="CPF" value={cpf} onChange={(value) => setCpf(formatCpf(value))} />
       <FieldEdit label="WhatsApp" value={phone} onChange={setPhone} />
       <FieldEdit label="E-mail" value={email} onChange={setEmail} />
       <label><span className="mb-1.5 block text-[10px] text-muted-foreground">Status</span><select value={active ? "active":"paused"} onChange={(e)=>setActive(e.target.value === "active")} className="input-finance"><option value="active">Ativo</option><option value="paused">Pausado</option></select></label>

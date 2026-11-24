@@ -80,8 +80,10 @@ function normalizeBirthDate(value: string | null | undefined) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) throw new Error("Data de nascimento inválida");
   const date = new Date(`${normalized}T12:00:00`);
   const today = new Date();
+  today.setHours(23, 59, 59, 999);
   const min = new Date("1900-01-01T12:00:00");
-  if (Number.isNaN(date.getTime()) || date < min || date > today) throw new Error("Data de nascimento inválida");
+  const validCalendarDate = !Number.isNaN(date.getTime()) && `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` === normalized;
+  if (!validCalendarDate || date < min || date > today) throw new Error("Data de nascimento inválida");
   return normalized;
 }
 

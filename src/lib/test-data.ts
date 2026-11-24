@@ -16,7 +16,7 @@ const DB_KEY = "tages:test-db:v1";
 const TEST_OWNER_ID = "00000000-0000-4000-8000-000000000032";
 const MAX_LOCAL_FILE_BYTES = 2 * 1024 * 1024;
 
-type TestBillingEntry = BillingEntry & { appointment_id?: string | null };
+type TestBillingEntry = BillingEntry & { appointment_id?: string | null; manually_cancelled?: boolean };
 type TestMaterial = MaterialRow & { data_url?: string | null };
 
 type TestDb = {
@@ -214,7 +214,7 @@ function syncAppointmentBilling(db: TestDb, appointment: AppointmentRow) {
 
   // Quando existe um parcelamento explícito, ele é a fonte da verdade. A sincronização
   // automática não recria uma cobrança única por cima das parcelas.
-  if (plannedEntries.length > 0) return;
+  if (plannedEntries.length > 0 || appointmentEntries.some((entry) => entry.manually_cancelled)) return;
 
   const date = appointment.scheduled_at.slice(0, 10);
   if (existing) {
@@ -520,6 +520,7 @@ export function testSaveAppointmentBillingPlan(input: {
     writeTestDb(db);
     return;
   }
+  if (db.billings.some((entry) => entry.appointment_id === appointment.id && entry.manually_cancelled)) throw new Error("Este atendimento possui débito cancelado manualmente. Não é possível recriar o parcelamento.");
   const count = input.payment_mode === "single" ? 1 : Math.max(2, Math.min(60, Math.trunc(input.installment_count)));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.first_due_date)) throw new Error("Informe o primeiro vencimento.");
 
@@ -863,3 +864,12 @@ export function testUpdateServiceWorkEntry(id: string, input: ServiceWorkEntryIn
 
 export function testDeleteServiceWorkEntry(id: string) { const db = readTestDb(); db.serviceWork = db.serviceWork.filter((e) => e.id !== id); writeTestDb(db); }
 export function testMarkServiceWorkPaid(id: string, paidAt: string, paymentMethod: string | null) { const db = readTestDb(); const row = db.serviceWork.find((e) => e.id === id); if (!row) throw new Error("Lançamento não encontrado"); row.status = "paid"; row.paid_at = paidAt; row.payment_method = paymentMethod as ServiceWorkEntry["payment_method"]; row.updated_at = nowIso(); writeTestDb(db); }
+
+export function testCancelOpenBilling(id: string) {
+  const db = readTestDb();
+  const row = db.billings.find((entry) => entry.id === id);
+  if (!row || row.status !== "pending" || Number(row.received_amount) !== 0) throw new Error("Somente cobranças sem recebimento podem ser canceladas.");
+  row.status = "cancelled";
+  row.manually_cancelled = true;
+  writeTestDb(db);
+}
